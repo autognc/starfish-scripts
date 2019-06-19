@@ -5,6 +5,7 @@
 
 #Generating Images:
  - in the directory with the blender file, run: blender [Blend File Name] -b -P SynImage.py
+
 #Uploading Images:
  - run: python dsup.py
 
