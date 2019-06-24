@@ -8,10 +8,12 @@ import json
 import time
 import os
 import sys
+import boto3
 
-def main():
+
+def main(local_path):
     start_time = time.time()
-    data_storage_path = "/home/mhs2466/Documents/TSL/render"
+    data_storage_path = local_path
     poses = utils.random_rotations(5)
     lightAngle = utils.random_rotations(3)
     #positions = utils.cartesian([0], [1, 2], [3,4,5])
@@ -64,15 +66,63 @@ def main():
     print("Data stored at: " + data_storage_path)
 
 
+def upload(local_path, bucket_name):
+    print("\n\n______________STARTING UPLOAD_________")
+    
+    localDataPath = local_path
+
+    # Create an S3 client
+    s3 = boto3.client('s3')
+
+    print("...begining upload to %s..." % bucket_name) 
+    
+    #cound number of files
+    num_files = 0
+    # For every file in directory
+    for file in files:
+        #ignore hidden files
+        if not file.startswith('.'):
+            #upload to s3
+            local_file = os.path.join(localDataPath, file)
+            s3.upload_file(local_file, bucket_name, file)
+            num_files = num_files + 1
+
+    print("...finished uploading...%d files uploaded..." % num_files)
+
+def validate_bucket_name(bucket_name):
+    s3t = boto3.resource('s3')
+    #check if bucket exits. If not return false
+    if s3t.Bucket(bucket_name).creation_date is None:
+        print("...Bucket does not exits, enter valid bucket name...")
+        return False
+    else:
+        #if exists, return true
+        print("...bucket exists....")
+        return True
+
 if __name__ == "__main__":
     yes = {'yes', 'y', 'Y'}
-    runGen = input("Generate images?[y/n]: ")
-    if runGen in yes:
-    	main()
-    
-    runUpload = input("Would you like to upload these images to AWS? [y/n]: ")
+    runGen = input("*> Generate images?[y/n]: ")
+    runUpload = input("*> Would you like to upload these images to AWS? [y/n]: ")
+    local_path = input("*> Where would you like to store/upload images from? Enter local path: ")
+
+    #get all files within directory
+    try:
+        files =next(os.walk(local_path))[2]
+    except:
+        print("...Faulty data path. Run program again...")
+        exit()
+
     if runUpload in yes: 
-    	os.system('python dsup.py')
+    	bucket_name = input("*> Enter Bucket name: ")
+        #check if bucket name valid
+    	while not validate_bucket_name(bucket_name):
+        	bucket_name = raw_input("*> Enter Bucket name: ")
+
+    if runGen in yes:
+    	main(local_path)
+    if runUpload in yes: 
+    	upload(local_path, bucket_name)
     
 #### MODIFYING SUN INTENSITY
 ###IF USING CYCLES RENDER: MUST MODIFY THROUGH USING NODES and CHANGE STRENGTH

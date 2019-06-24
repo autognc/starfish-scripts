@@ -1,6 +1,23 @@
+Skip to content
+ 
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ 
+@mshah0686 
+0
+0 0 autognc/starfish
+ Code  Issues 0  Pull requests 0  Projects 0  Wiki  Security  Insights  Settings
+starfish/dsup.py
+@mshah0686 mshah0686 Blend, dsup, synimage created
+1cb803a 2 days ago
+60 lines (47 sloc)  1.61 KB
+    
 """
 Author(s): Malav Shah
-
 Upload Dataset to AWS
 """
 
@@ -55,5 +72,3 @@ def upload():
 
 if __name__ == "__main__":
     upload()
-
-
