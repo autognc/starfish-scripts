@@ -1,7 +1,7 @@
 import numpy as np
 import bpy
 import ssi
-from ssi.rotations import Spherical
+rom ssi.rotations import Spherical
 from mathutils import Euler
 from ssi import utils
 import json
@@ -85,17 +85,20 @@ def upload(ds_name, bucket_name):
 
     print("...begining upload to %s..." % bucket_name) 
     
-
-    files =next(os.walk(os.cwd() + "/render/" + ds_name))[2]
-    #cound number of files
+    try:
+        files =next(os.walk(os.getcwd() + "/render/" + ds_name))[2]
+    except Exception:
+        print("...No data set named " + ds_name + " found in starfish/render. Please generate images with that dataset name or move existing dataset into render folder")
+        exit()
+    #count number of files
     num_files = 0
     # For every file in directory
     for file in files:
         #ignore hidden files
         if not file.startswith('.'):
             #upload to s3
-            local_file = os.path.join(localDataPath, file)
-            s3.upload_file(local_file, bucket_name, file)
+            local_file = os.path.join(os.getcwd() + "/render/" + ds_name, file)
+            s3.upload_file(local_file, bucket_name, ds_name + "/" + file)
             num_files = num_files + 1
 
     print("...finished uploading...%d files uploaded..." % num_files)
@@ -126,14 +129,14 @@ if __name__ == "__main__":
     	bucket_name = input("*> Enter Bucket name: ")
         #check if bucket name valid
     	while not validate_bucket_name(bucket_name):
-        	bucket_name = raw_input("*> Enter Bucket name: ")
+        	bucket_name = input("*> Enter Bucket name: ")
     
-    print("Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter dataset name")
-    print("Note: if the dataset name exists, images will be stored in that directory")
+    print("   Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter dataset name. If the dataset name exists, images will be stored in that directory")
     dataset_name = input("*> Enter name for dataset: ")
-    print("Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
+    print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     
     if runGen in yes:
     	generate(dataset_name)
     if runUpload in yes: 
     	upload(dataset_name, bucket_name)
+    print("______________DONE EXECUTING______________")
