@@ -9,11 +9,11 @@ import time
 import os
 import sys
 import boto3
+import uuid
 
 
-def main(local_path):
+def generate(ds_name):
     start_time = time.time()
-    data_storage_path = local_path
     poses = utils.random_rotations(5)
     lightAngle = utils.random_rotations(3)
     #positions = utils.cartesian([0], [1, 2], [3,4,5])
@@ -22,10 +22,18 @@ def main(local_path):
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance=[100, 150, 200],
-        lighting = lightAngle
+        distance=[150],
+        #lighting = lightAngle
         #offset = offsets
     )
+
+    #check if dataset exists in render, if not, create folder
+    try:
+        os.mkdir("render/" + ds_name)
+    except Exception:
+        pass
+    
+    data_storage_path = os.getcwd() + "/render/" + ds_name 	
     
     #setting file output stuff
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
@@ -43,20 +51,24 @@ def main(local_path):
     for i, frame in enumerate(seq):
         frame.setup(bpy.data.objects["Enhanced Cygnus"], bpy.data.objects["Camera1"], bpy.data.objects["Sun"])
         # add metadata to frame
-        frame.timestamp = int(time.time() * 1000)
-        frame.sequence_name = "Render Testing"
+        #frame.timestamp = int(time.time() * 1000)
+        frame.sequence_name = ds_name
         
+	
+        bpy.context.scene.frame_set(0)
         # set output path
-        output_node.file_slots[0].path = f"real#_{i}"
-        output_node.file_slots[1].path = f"mask#_{i}"
+        name = uuid.uuid4()
+        output_node.file_slots[0].path = str(name) + "#"
+        output_node.file_slots[1].path = str(name) + "#_mask"
         
         # dump data to json
-        with open(os.path.join(output_node.base_path, f"{i}.json"), "w") as f:
+        with open(os.path.join(output_node.base_path, str(name) + "0_meta.json"), "w") as f:
             f.write(frame.dumps())
         image_num = i + 1
         # render
         #bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations = 1)
         bpy.ops.render.render(scene="Render")
+
     print("===========================================" + "\r")
     time_taken = time.time() - start_time
     print("------Time Taken: %s seconds----------" %(time_taken) + "\r")
@@ -66,16 +78,16 @@ def main(local_path):
     print("Data stored at: " + data_storage_path)
 
 
-def upload(local_path, bucket_name):
+def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
-    
-    localDataPath = local_path
 
     # Create an S3 client
     s3 = boto3.client('s3')
 
     print("...begining upload to %s..." % bucket_name) 
     
+
+    files =next(os.walk(os.cwd() + "/render/" + ds_name))[2]
     #cound number of files
     num_files = 0
     # For every file in directory
@@ -101,29 +113,28 @@ def validate_bucket_name(bucket_name):
         return True
 
 if __name__ == "__main__":
+    #check if render directory exists, if not create it
+    try:
+        os.mkdir("render")
+    except Exception:
+        pass
+
     yes = {'yes', 'y', 'Y'}
     runGen = input("*> Generate images?[y/n]: ")
+    
     runUpload = input("*> Would you like to upload these images to AWS? [y/n]: ")
-    local_path = input("*> Where would you like to store/upload images from? Enter local path: ")
-
-    #get all files within directory
-    try:
-        files =next(os.walk(local_path))[2]
-    except:
-        print("...Faulty data path. Run program again...")
-        exit()
-
     if runUpload in yes: 
     	bucket_name = input("*> Enter Bucket name: ")
         #check if bucket name valid
     	while not validate_bucket_name(bucket_name):
         	bucket_name = raw_input("*> Enter Bucket name: ")
-
-    if runGen in yes:
-    	main(local_path)
-    if runUpload in yes: 
-    	upload(local_path, bucket_name)
     
-#### MODIFYING SUN INTENSITY
-###IF USING CYCLES RENDER: MUST MODIFY THROUGH USING NODES and CHANGE STRENGTH
-###IF USING EVEEE RENDER: bpy.data.lights['Sun'].energy = _______
+    print("Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter dataset name")
+    print("Note: if the dataset name exists, images will be stored in that directory")
+    dataset_name = input("*> Enter name for dataset: ")
+    print("Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
+    
+    if runGen in yes:
+    	generate(dataset_name)
+    if runUpload in yes: 
+    	upload(dataset_name, bucket_name)
