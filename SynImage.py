@@ -14,17 +14,17 @@ import uuid
 
 def generate(ds_name):
     start_time = time.time()
-    poses = utils.random_rotations(5)
+    poses = utils.random_rotations(10)
     lightAngle = utils.random_rotations(3)
     #positions = utils.cartesian([0], [1, 2], [3,4,5])
-    #offsets = utils.cartesian([0.25, 0.3, 0.46, 0.68, 0.8, 0.9], [0.3, 0.41, 0.56, 0.68, 0.75, 0.8, 0.93])
+    offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68, 0.78])
     
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance=[150],
-        #lighting = lightAngle
-        #offset = offsets
+        distance=[100, 150, 235],
+        lighting = lightAngle,
+        offset = offsets
     )
 
     #check if dataset exists in render, if not, create folder
@@ -56,7 +56,6 @@ def generate(ds_name):
         
 	
         bpy.context.scene.frame_set(0)
-        # set output path
         name = uuid.uuid4()
         output_node.file_slots[0].path = str(name) + "#"
         output_node.file_slots[1].path = str(name) + "#_mask"
