@@ -1,7 +1,7 @@
 import numpy as np
 import bpy
 import ssi
-rom ssi.rotations import Spherical
+from ssi.rotations import Spherical
 from mathutils import Euler
 from ssi import utils
 import json
@@ -10,7 +10,22 @@ import os
 import sys
 import boto3
 import uuid
+import csv
 
+def createCSV(name, ds_name):
+    header = ['label', 'R', 'G', 'B']
+    rows = [
+        ['Background', '185', '1', '207'],
+        ['Cygnus', '190', '196', '205'],
+        ['Solar Panel', '192', '195', '1'],
+        ['Orbitrak Logo', '196', '0', '9'],
+        ['Cygnus Logo', '0', '199', '24']]
+ 
+    with open("render/" + ds_name + "/" + str(name) + '0_labels.csv', 'w') as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow(header) # write header
+        csv_writer.writerows(rows)
+    f.close()
 
 def generate(ds_name):
     start_time = time.time()
@@ -22,9 +37,9 @@ def generate(ds_name):
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance=[100, 150, 235],
+        distance=[75, 100, 150, 235],
         lighting = lightAngle,
-        offset = offsets
+        #offset = offsets
     )
 
     #check if dataset exists in render, if not, create folder
@@ -63,6 +78,9 @@ def generate(ds_name):
         # dump data to json
         with open(os.path.join(output_node.base_path, str(name) + "0_meta.json"), "w") as f:
             f.write(frame.dumps())
+        
+        createCSV(name, ds_name)
+		
         image_num = i + 1
         # render
         #bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations = 1)
