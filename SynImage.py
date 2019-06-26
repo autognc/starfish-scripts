@@ -23,7 +23,7 @@ def createCSV(name, ds_name):
  
     with open("render/" + ds_name + "/" + str(name) + '0_labels.csv', 'w') as f:
         csv_writer = csv.writer(f)
-        csv_writer.writerow(header) # write header
+        csv_writer.writerow(header)
         csv_writer.writerows(rows)
     f.close()
 
@@ -37,12 +37,12 @@ def generate(ds_name):
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance=[75, 100, 150, 235],
+        distance = [75, 100, 150, 235],
         lighting = lightAngle,
         #offset = offsets
     )
 
-    #check if dataset exists in render, if not, create folder
+    #check if folder exists in render, if not, create folder
     try:
         os.mkdir("render/" + ds_name)
     except Exception:
@@ -106,7 +106,7 @@ def upload(ds_name, bucket_name):
     try:
         files =next(os.walk(os.getcwd() + "/render/" + ds_name))[2]
     except Exception:
-        print("...No data set named " + ds_name + " found in starfish/render. Please generate images with that dataset name or move existing dataset into render folder")
+        print("...No data set named " + ds_name + " found in starfish/render. Please generate images with that folder name or move existing folder into render folder")
         exit()
     #count number of files
     num_files = 0
@@ -149,8 +149,8 @@ if __name__ == "__main__":
     	while not validate_bucket_name(bucket_name):
         	bucket_name = input("*> Enter Bucket name: ")
     
-    print("   Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter dataset name. If the dataset name exists, images will be stored in that directory")
-    dataset_name = input("*> Enter name for dataset: ")
+    print("   Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter folder name. If the folder name exists, images will be stored in that directory")
+    dataset_name = input("*> Enter name for folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     
     if runGen in yes:
