@@ -25,3 +25,11 @@ Modify these parameters in `SynImage.py` before generating images.
  - **Object Position:** The absolute 3D position of the object in the global coordinate system. This is for when we have a background (so if earth is in the background or not) so not being used right now. 
  
  - **Background/camera orientation:** the orientation of the camera relative to the global coordinate system. This affects only what part of the scene appears in the background and at what angle it appears.
+ 
+ Variables modified in Blender
+ - 
+ These are somethings we can modify easily in the blender file itself. There is a lot of parameters not listed but they are not simple changes like these.
+  - **Change Background Color:** We set this to pure black, but it can be changed.
+  - **Mask Color:** Change the colors used in the masks for each material seperatly (i.e. we want a black background mask with purple cygnus).
+  - **Light Intensity:** Change how much energy is in the light. So makes the scene brighter or dimmer
+  - **Mask Properties:** Change what is being masked. So if we want the logos to be the same color in the mask, all of cygnus to me one color, certain object on cygnus to have its own color etc.
