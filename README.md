@@ -1,6 +1,4 @@
 # starfish
-Use `git status` to list all new or modified files that haven't yet been committed.
-
 
 Setup
 - 
@@ -15,6 +13,7 @@ Running Script
  
 Types of Images that can be created (variables that can be modified for a picture):
 - 
+Modify these parameters in `SynImage.py` before generating images. 
  - **Camera Distance:** The distance between the cygnus and camera. Will make cygnus closer or farther in the scene.
  
  - **Light Angle:** Specify the different angles within a 3D space that create different lighting directions on cygnus. This does not change the light intensity (there is no variable for light intensity yet, but we can manually change it in blender). Rather, think of it as positioning the sun at a different location on a sphere with cygnus at the center of the sphere (e.g. from above, from the right, from behind, etc.). Right now we randomly create different positions.
