@@ -9,7 +9,7 @@ import time
 import os
 import sys
 import boto3
-import uuid
+import shortuuid
 import csv
 
 def createCSV(name, ds_name):
@@ -21,7 +21,7 @@ def createCSV(name, ds_name):
         ['Orbitrak Logo', '196', '0', '9'],
         ['Cygnus Logo', '0', '199', '24']]
  
-    with open("render/" + ds_name + "/" + str(name) + '0_labels.csv', 'w') as f:
+    with open("render/" + ds_name + "/" + "labels_" + str(name) + '0.csv', 'w') as f:
         csv_writer = csv.writer(f)
         csv_writer.writerow(header)
         csv_writer.writerows(rows)
@@ -29,17 +29,17 @@ def createCSV(name, ds_name):
 
 def generate(ds_name):
     start_time = time.time()
-    poses = utils.random_rotations(10)
+    poses = utils.random_rotations(9)
     lightAngle = utils.random_rotations(3)
     #positions = utils.cartesian([0], [1, 2], [3,4,5])
-    offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68, 0.78])
+    offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68])
     
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance = [75, 100, 150, 235],
+        distance = [25, 45, 60, 70],
         lighting = lightAngle,
-        #offset = offsets
+        offset = offsets
     )
 
     #check if folder exists in render, if not, create folder
@@ -62,21 +62,22 @@ def generate(ds_name):
         obj.animation_data_clear()
         
     image_num = 0
+    shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
         
     for i, frame in enumerate(seq):
         frame.setup(bpy.data.objects["Enhanced Cygnus"], bpy.data.objects["Camera1"], bpy.data.objects["Sun"])
         # add metadata to frame
-        #frame.timestamp = int(time.time() * 1000)
         frame.sequence_name = ds_name
         
 	
         bpy.context.scene.frame_set(0)
-        name = uuid.uuid4()
-        output_node.file_slots[0].path = str(name) + "#"
-        output_node.file_slots[1].path = str(name) + "#_mask"
+        #create name for the current image (unique to that image)
+        name = shortuuid.uuid()
+        output_node.file_slots[0].path = "image_" + str(name) + "#"
+        output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
         # dump data to json
-        with open(os.path.join(output_node.base_path, str(name) + "0_meta.json"), "w") as f:
+        with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())
         
         createCSV(name, ds_name)
@@ -93,6 +94,7 @@ def generate(ds_name):
     print("Total number of files: " + str(image_num * 3) + "\r")
     print("Average time per image: " + str(time_taken / image_num))
     print("Data stored at: " + data_storage_path)
+    bpy.ops.wm.quit_blender()
 
 
 def upload(ds_name, bucket_name):
@@ -115,6 +117,8 @@ def upload(ds_name, bucket_name):
         #ignore hidden files
         if not file.startswith('.'):
             #upload to s3
+            print("uploading...")
+            sys.stdout.write("\033[F")
             local_file = os.path.join(os.getcwd() + "/render/" + ds_name, file)
             s3.upload_file(local_file, bucket_name, ds_name + "/" + file)
             num_files = num_files + 1
