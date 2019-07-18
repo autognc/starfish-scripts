@@ -27,7 +27,7 @@ def createCSV(name, ds_name):
         csv_writer.writerows(rows)
     f.close()
 
-def generate(ds_name):
+def generate(ds_name, tags_list):
     start_time = time.time()
     poses = utils.random_rotations(9)
     lightAngle = utils.random_rotations(3)
@@ -68,7 +68,10 @@ def generate(ds_name):
         frame.setup(bpy.data.objects["Enhanced Cygnus"], bpy.data.objects["Camera1"], bpy.data.objects["Sun"])
         # add metadata to frame
         frame.sequence_name = ds_name
-        
+        for tag in tags_list:
+        	frame.picture_tags = tag
+        #TO-DO
+        #frame.picture_tags = tags_list
 	
         bpy.context.scene.frame_set(0)
         #create name for the current image (unique to that image)
@@ -156,9 +159,10 @@ if __name__ == "__main__":
     print("   Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter folder name. If the folder name exists, images will be stored in that directory")
     dataset_name = input("*> Enter name for folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
-    
+    tags = input("*> Enter tags for the batch seperated with space: ")
+    tags_list = tags.split();
     if runGen in yes:
-    	generate(dataset_name)
+    	generate(dataset_name, tags_list)
     if runUpload in yes: 
     	upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
