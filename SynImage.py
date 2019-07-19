@@ -138,10 +138,8 @@ def validate_bucket_name(bucket_name):
         #if exists, return true
         print("...bucket exists....")
         return True
-
-if __name__ == "__main__":
-    #check if render directory exists, if not create it
-    try:
+def main():
+	try:
         os.mkdir("render")
     except Exception:
         pass
@@ -166,3 +164,7 @@ if __name__ == "__main__":
     if runUpload in yes: 
     	upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
+
+if __name__ == "__main__":
+    main()
+    
