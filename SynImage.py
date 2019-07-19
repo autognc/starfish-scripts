@@ -68,10 +68,9 @@ def generate(ds_name, tags_list):
         frame.setup(bpy.data.objects["Enhanced Cygnus"], bpy.data.objects["Camera1"], bpy.data.objects["Sun"])
         # add metadata to frame
         frame.sequence_name = ds_name
-        for tag in tags_list:
-        	frame.picture_tags = tag
-        #TO-DO
-        #frame.picture_tags = tags_list
+
+        #Tag the pictures
+        frame.picture_tags = tags_list
 	
         bpy.context.scene.frame_set(0)
         #create name for the current image (unique to that image)
@@ -139,7 +138,7 @@ def validate_bucket_name(bucket_name):
         print("...bucket exists....")
         return True
 def main():
-	try:
+    try:
         os.mkdir("render")
     except Exception:
         pass
