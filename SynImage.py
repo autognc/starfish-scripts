@@ -11,15 +11,18 @@ import sys
 import boto3
 import shortuuid
 import csv
+from PIL import Image
+from collections import defaultdict
 
 def createCSV(name, ds_name):
     header = ['label', 'R', 'G', 'B']
     rows = [
-        ['Background', '185', '1', '207'],
-        ['Cygnus', '190', '196', '205'],
-        ['Solar Panel', '192', '195', '1'],
-        ['Orbitrak Logo', '196', '0', '9'],
-        ['Cygnus Logo', '0', '199', '24']]
+        ['background', '0', '0', '0'],
+        ['barrel', '206', '0', '0'],
+        ['panel_right', '206', '206', '0'],
+        ['panel_left', '0', '0', '206'],
+        ['orbitrak_logo', '0', '206', '206'],
+        ['cygnus_logo', '206', '0', '206']]
  
     with open("render/" + ds_name + "/" + "labels_" + str(name) + '0.csv', 'w') as f:
         csv_writer = csv.writer(f)
@@ -27,19 +30,62 @@ def createCSV(name, ds_name):
         csv_writer.writerows(rows)
     f.close()
 
+def load_image_into_numpy_array(image):
+    (im_width, im_height) = image.size
+    image = image.convert('RGB')
+    return np.array(image.getdata()).reshape(
+        (im_height, im_width, 3)).astype(np.uint8)
+
+def load_images_from_paths(image_paths):
+    images = []
+    for impath in image_paths:
+        image = Image.open(impath)
+        image_np = load_image_into_numpy_array(image)
+
+        images.append(image_np)
+
+    return images
+
+def get_xy(name, ds_name):
+    # read in truth paths from the dataset for both dev and test sets
+    truth_paths = [os.getcwd() + "/render/" + ds_name + '/truth_' + name + '0.png']
+    truth_images = load_images_from_paths(truth_paths)
+    # represented with BGR values. load these in from csv that maps object to color (e.g. left solar panel is always red dot)
+    colors = {'barrel_top': [0, 0, 206], 'barrel_bottom': [0, 206, 73], 'panel_left':[206, 0, 206], 'panel_right': [0, 206, 206]}
+    #Back: Blue, Front: Grean, Right: Pink, Left: Cyan
+    for im in truth_images:
+        centroids = defaultdict()
+        for color in colors:
+            idxs = np.where(np.all(im == colors[color], axis=2))
+
+            # centroid represented as (y,x)
+            centroid = (int(round(np.average(idxs[0]))), int(round(np.average(idxs[1]))))
+        
+            centroids[color] = centroid
+
+        # store this centroid dictionary in the metadata file for the image under category 'truth_centroids'
+    z = list(zip(centroids['barrel_top'], centroids['barrel_bottom']))
+    avgCenter = (int(round(np.average(z[0]))), int(round(np.average(z[1]))))
+    centroids['barrel_center'] = avgCenter
+    return centroids
+
+#********************************************************************************************
+############################################
+#The following is the main code for image generation
+############################################
 def generate(ds_name, tags_list):
     start_time = time.time()
-    poses = utils.random_rotations(9)
-    lightAngle = utils.random_rotations(3)
+    poses = utils.random_rotations(10)
+    lightAngle = utils.random_rotations(4)
     #positions = utils.cartesian([0], [1, 2], [3,4,5])
-    offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68])
+    #offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68])
     
     seq = ssi.Sequence.exhaustive(
         #position = positions
         pose = poses,
-        distance = [25, 45, 60, 70],
+        distance = [75, 50],
         lighting = lightAngle,
-        offset = offsets
+        #offset = offsets
     )
 
     #check if folder exists in render, if not, create folder
@@ -55,7 +101,7 @@ def generate(ds_name, tags_list):
     output_node.base_path = data_storage_path
     
     #set black background
-    bpy.context.scene.world.color = (0,0,0)
+    #bpy.context.scene.world.color = (0,0,0)
     
     #remove all animation
     for obj in bpy.context.scene.objects:
@@ -65,40 +111,46 @@ def generate(ds_name, tags_list):
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
         
     for i, frame in enumerate(seq):
-        frame.setup(bpy.data.objects["Enhanced Cygnus"], bpy.data.objects["Camera1"], bpy.data.objects["Sun"])
-        # add metadata to frame
-        frame.sequence_name = ds_name
-
-        #Tag the pictures
-        frame.picture_tags = tags_list
+        frame.setup(bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
+        frame.setup(bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
+        frame.setup(bpy.data.objects["Truth_Data"], bpy.data.objects["Camera_Truth"], bpy.data.objects["Sun"])
 	
         bpy.context.scene.frame_set(0)
         #create name for the current image (unique to that image)
         name = shortuuid.uuid()
         output_node.file_slots[0].path = "image_" + str(name) + "#"
         output_node.file_slots[1].path = "mask_" + str(name) + "#"
-        
-        # dump data to json
-        with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
-            f.write(frame.dumps())
+        output_node.file_slots[2].path = "truth_" + str(name) + "#"
         
         createCSV(name, ds_name)
 		
         image_num = i + 1
         # render
-        #bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations = 1)
         bpy.ops.render.render(scene="Render")
+        
+        #add centroid truth data to json files
+        frame.truth_centroids = get_xy(name, ds_name)
+        #Tag the pictures
+        frame.tags = tags_list
+        # add metadata to frame
+        frame.sequence_name = ds_name        
+    
+        # dump data to json
+        with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
+            f.write(frame.dumps())
 
     print("===========================================" + "\r")
     time_taken = time.time() - start_time
     print("------Time Taken: %s seconds----------" %(time_taken) + "\r")
     print("Number of images generated: " + str(image_num) + "\r")
-    print("Total number of files: " + str(image_num * 3) + "\r")
+    print("Total number of files: " + str(image_num * 5) + "\r")
     print("Average time per image: " + str(time_taken / image_num))
     print("Data stored at: " + data_storage_path)
     bpy.ops.wm.quit_blender()
 
-
+############################
+#The following is the main code for upload
+############################
 def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
 
@@ -117,7 +169,7 @@ def upload(ds_name, bucket_name):
     # For every file in directory
     for file in files:
         #ignore hidden files
-        if not file.startswith('.'):
+        if not file.startswith('.') and not file.startswith('truth'):
             #upload to s3
             print("uploading...")
             sys.stdout.write("\033[F")
@@ -137,6 +189,9 @@ def validate_bucket_name(bucket_name):
         #if exists, return true
         print("...bucket exists....")
         return True
+#############################################
+#Run user input data then run generation/upload
+#############################################
 def main():
     try:
         os.mkdir("render")
