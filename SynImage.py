@@ -5,6 +5,7 @@ from ssi.rotations import Spherical
 from mathutils import Euler
 from ssi import utils
 import json
+import math
 import time
 import os
 import sys
@@ -13,6 +14,7 @@ import shortuuid
 import csv
 from PIL import Image
 from collections import defaultdict
+import random
 
 def createCSV(name, ds_name):
     header = ['label', 'R', 'G', 'B']
@@ -41,33 +43,43 @@ def load_images_from_paths(image_paths):
     for impath in image_paths:
         image = Image.open(impath)
         image_np = load_image_into_numpy_array(image)
-
         images.append(image_np)
-
     return images
+
+def deleteImage(name, ds_name):
+    for f in os.listdir(os.getcwd() +'/render/' + ds_name):
+        if name in f:
+            os.remove(os.getcwd() + '/render/' + ds_name + '/' + f)
+    print('--------------------------------- DELETED IMAGE------------------------------')
 
 def get_xy(name, ds_name):
     # read in truth paths from the dataset for both dev and test sets
     truth_paths = [os.getcwd() + "/render/" + ds_name + '/truth_' + name + '0.png']
     truth_images = load_images_from_paths(truth_paths)
     # represented with BGR values. load these in from csv that maps object to color (e.g. left solar panel is always red dot)
-    colors = {'barrel_top': [0, 0, 206], 'barrel_bottom': [0, 206, 73], 'panel_left':[206, 0, 206], 'panel_right': [0, 206, 206]}
+    colors = {'barrel_top': [0, 0, 206], 'barrel_bottom': [0, 206, 73], 'panel_left':[206, 0, 206], 'panel_right': [0, 206, 206], 'orbitrak_logo': [206, 177, 0], 'cygnus_logo':[206, 0, 0]}
     #Back: Blue, Front: Grean, Right: Pink, Left: Cyan
     for im in truth_images:
         centroids = defaultdict()
+        centroids['barrel_top'] = 0
+        centroids['barrel_bottom'] = 0
         for color in colors:
             idxs = np.where(np.all(im == colors[color], axis=2))
-
-            # centroid represented as (y,x)
-            centroid = (int(round(np.average(idxs[0]))), int(round(np.average(idxs[1]))))
-        
-            centroids[color] = centroid
-
+            y,x = idxs
+            if len(y) != 0 and len(x) != 0:
+                # centroid represented as (y,x)
+                centroid = (int(round(np.average(idxs[0]))), int(round(np.average(idxs[1]))))
+                centroids[color] = centroid
         # store this centroid dictionary in the metadata file for the image under category 'truth_centroids'
-    z = list(zip(centroids['barrel_top'], centroids['barrel_bottom']))
-    avgCenter = (int(round(np.average(z[0]))), int(round(np.average(z[1]))))
-    centroids['barrel_center'] = avgCenter
-    return centroids
+    try:
+        z = list(zip(centroids['barrel_top'], centroids['barrel_bottom']))
+        avgCenter = (int(round(np.average(z[0]))), int(round(np.average(z[1]))))
+        centroids['barrel_center'] = avgCenter
+        deleted = False
+    except:
+        deleteImage(name, ds_name)
+        deleted = True
+    return centroids, deleted
 
 #********************************************************************************************
 ############################################
@@ -75,17 +87,50 @@ def get_xy(name, ds_name):
 ############################################
 def generate(ds_name, tags_list):
     start_time = time.time()
-    poses = utils.random_rotations(10)
-    lightAngle = utils.random_rotations(4)
-    #positions = utils.cartesian([0], [1, 2], [3,4,5])
-    #offsets = utils.cartesian([0.46, 0.68, 0.8], [0.41, 0.56, 0.68])
+    #poses = utils.random_rotations(20)
+    #lightAngle = utils.random_rotations(5)
+    positions = utils.cartesian([0], [1, 2], [3,4,5])
+    #backgrounds = utils.random_rotations(5)
+    offsets = utils.cartesian([0.3, 0.6], [0.5])
+
+    poses = [
+             Euler((math.radians(-45.0), math.radians(-60.0),  math.radians(-10)), 'XYZ'),
+             Euler((math.radians(10), math.radians(-50),  math.radians(0)), 'XYZ'),
+             Euler((math.radians(-40), math.radians(-30),  math.radians(40)), 'XYZ'),
+             Euler((math.radians(-45), math.radians(-30),  math.radians(-40)), 'XYZ'),
+             Euler((math.radians(-45), math.radians(-60),  math.radians(155)), 'XYZ'),
+             Euler((math.radians(60), math.radians(-20),  math.radians(-50)), 'XYZ'),
+             Euler((math.radians(180), math.radians(-60),  math.radians(-10)), 'XYZ'),
+            ]
+    backgrounds = [Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ'),
+                   Euler((math.radians(60), math.radians(0),  math.radians(-40)), 'XYZ'),
+                   Euler((math.radians(0), math.radians(-70),  math.radians(0)), 'XYZ'),
+                   Euler((math.radians(-60), math.radians(-50),  math.radians(40)), 'XYZ'),
+                   Euler((math.radians(0), math.radians(-50),  math.radians(50)), 'XYZ'),
+           Euler((math.radians(0), math.radians(-45),  math.radians(0)), 'XYZ'),
+           Euler((math.radians(0), math.radians(0),  math.radians(80)), 'XYZ'),
+                   Euler((math.radians(100), math.radians(100),  math.radians(100)), 'XYZ'),
+                  ]
     
+    poses_extend = []
+    for pose in poses:
+        poses_extend.append(pose)
+        for _ in range(7):
+            for i in range(0,3):
+                new_pose = pose.copy()
+                rand = random.randint(-40, 40)
+                while abs(rand) < 10:
+                    rand = random.randint(-40, 40)
+                new_pose[i] += math.radians(rand)
+                poses_extend.append(new_pose)
+
     seq = ssi.Sequence.exhaustive(
+        background = backgrounds,
+        pose = poses_extend,
+        distance = [30, 35, 40],
         #position = positions
-        pose = poses,
-        distance = [75, 50],
-        lighting = lightAngle,
-        #offset = offsets
+        #lighting = lightAngle,
+        offset = offsets
     )
 
     #check if folder exists in render, if not, create folder
@@ -94,7 +139,7 @@ def generate(ds_name, tags_list):
     except Exception:
         pass
     
-    data_storage_path = os.getcwd() + "/render/" + ds_name 	
+    data_storage_path = os.getcwd() + "/render/" + ds_name     
     
     #setting file output stuff
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
@@ -114,7 +159,7 @@ def generate(ds_name, tags_list):
         frame.setup(bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.objects["Truth_Data"], bpy.data.objects["Camera_Truth"], bpy.data.objects["Sun"])
-	
+    
         bpy.context.scene.frame_set(0)
         #create name for the current image (unique to that image)
         name = shortuuid.uuid()
@@ -123,21 +168,22 @@ def generate(ds_name, tags_list):
         output_node.file_slots[2].path = "truth_" + str(name) + "#"
         
         createCSV(name, ds_name)
-		
+        
         image_num = i + 1
         # render
         bpy.ops.render.render(scene="Render")
         
         #add centroid truth data to json files
-        frame.truth_centroids = get_xy(name, ds_name)
+        frame.truth_centroids, deleted = get_xy(name, ds_name)
         #Tag the pictures
         frame.tags = tags_list
         # add metadata to frame
         frame.sequence_name = ds_name        
     
         # dump data to json
-        with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
-            f.write(frame.dumps())
+        if not deleted:
+            with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
+                f.write(frame.dumps())
 
     print("===========================================" + "\r")
     time_taken = time.time() - start_time
@@ -203,10 +249,10 @@ def main():
     
     runUpload = input("*> Would you like to upload these images to AWS? [y/n]: ")
     if runUpload in yes: 
-    	bucket_name = input("*> Enter Bucket name: ")
+        bucket_name = input("*> Enter Bucket name: ")
         #check if bucket name valid
-    	while not validate_bucket_name(bucket_name):
-        	bucket_name = input("*> Enter Bucket name: ")
+        while not validate_bucket_name(bucket_name):
+            bucket_name = input("*> Enter Bucket name: ")
     
     print("   Note: if you want to upload to AWS but not generate images, move folder with images to 'render' and enter folder name. If the folder name exists, images will be stored in that directory")
     dataset_name = input("*> Enter name for folder: ")
@@ -214,9 +260,9 @@ def main():
     tags = input("*> Enter tags for the batch seperated with space: ")
     tags_list = tags.split();
     if runGen in yes:
-    	generate(dataset_name, tags_list)
+        generate(dataset_name, tags_list)
     if runUpload in yes: 
-    	upload(dataset_name, bucket_name)
+        upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
 
 if __name__ == "__main__":
