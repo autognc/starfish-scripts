@@ -59,7 +59,7 @@ SCALE = 17
 MOON_RADIUS = 0.4
 MOON_CENTERX = 4.723
 MOON_CENTERY = 0
-def generate(ds_name, tags_list):
+def generate(ds_name, tags_list, background_dir=None):
     start_time = time.time()
 
     #check if folder exists in render, if not, create folder
@@ -69,11 +69,6 @@ def generate(ds_name, tags_list):
         pass
     
     data_storage_path = os.getcwd() + "/render/" + ds_name     
-    print(bpy.data.scenes.keys())
-    print(bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image_user.frame_current)
-    print(bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image_user.use_auto_refresh)
-    print(bpy.data.images["Moon_1.exr"].name)
-    print(bpy.data.images["Moon_1.exr"].filepath_from_user())
     #setting file output stuff
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
@@ -88,16 +83,24 @@ def generate(ds_name, tags_list):
         
     image_num = 0
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-    # np.random.seed(42)
+    np.random.seed(42)
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
-    
-    moon_num = 1
+    # check if background dir is not None and get list of .exr files in that directory
+    if background_dir is not None:
+        images_list = []
+        for f in os.listdir(background_dir):
+            if f.endswith(".exr"):
+                images_list.append(f)
+        images_list = sorted(images_list)
+        num_images = len(images_list)
+        moon_num = 0
+        
+    else:
+        num_images = 0
 
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
-		
-        moon_num = (moon_num + 1) if moon_num < 5 else 1
-	
+    
         for scene in bpy.data.scenes:
             scene.unit_settings.scale_length = 1 / SCALE
 
@@ -106,7 +109,9 @@ def generate(ds_name, tags_list):
 
         if np.random.random() < 0.5:
             # mooon background - uniform distribution over disk slightly larger than moon
-            r = MOON_RADIUS/moon_num * np.sqrt(np.random.random())
+            
+            # NEED A WAY TO ACCOUNT BETTER WAY TO DETERMINE MOON RADIUS
+            r = MOON_RADIUS/(moon_num+1) * np.sqrt(np.random.random())
             t = np.random.uniform(low=0, high=2 * np.pi)
             background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
         else:
@@ -115,7 +120,7 @@ def generate(ds_name, tags_list):
             background = Euler([0, 0, 0])
 
         offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
-		
+        
         bpy.context.scene.frame_set(0)
         frame = starfish.Frame(
             background=background,
@@ -128,16 +133,19 @@ def generate(ds_name, tags_list):
         
         
         # load new Environment Texture
-        image = bpy.data.images.load(filepath = os.getcwd() + "/moon_sequence/{0:04}.exr".format(moon_num))
-        bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+        if num_images != 0: 
+            image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
+            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+            moon_num = moon_num + 1 if moon_num < num_images-1 else 0
         
         
-        glare_value = np.random.beta(0.75, 3) - 1
+        glare_value = np.random.uniform(.25, .75)
+        threshold_value = np.random.uniform(5,7)
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-		
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = threshold_value
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
-        output_node.file_slots[0].path = "image_"+ str(moon_num) +"_"+ str(name) + "#"
+        output_node.file_slots[0].path = "image_"+ str(moon_num) + "_{}_{}_ ".format(glare_value, threshold_value)+ str(name) + "#"
         output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
         createCSV(name, ds_name)
@@ -230,9 +238,20 @@ def main():
     dataset_name = input("*> Enter name for folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     tags = input("*> Enter tags for the batch seperated with space: ")
+
+    # prompt user for directory of background images
+    background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
+    if background_sequence in yes:
+        background_dir = input("*> Enter Imgae Directory: ")
+        while not os.path.isdir(background_dir):
+            background_dir = input("*> Enter Imgae Directory: ")
+    
     tags_list = tags.split();
     if runGen in yes:
-        generate(dataset_name, tags_list)
+        if background_sequence in yes:
+            generate(dataset_name, tags_list, background_dir)
+        else:
+            generate(dataset_name, tags_list)
     if runUpload in yes: 
         upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
