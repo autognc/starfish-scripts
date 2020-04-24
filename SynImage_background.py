@@ -242,9 +242,9 @@ def main():
     # prompt user for directory of background images
     background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
     if background_sequence in yes:
-        background_dir = input("*> Enter Imgae Directory: ")
+        background_dir = input("*> Enter Image Directory: ")
         while not os.path.isdir(background_dir):
-            background_dir = input("*> Enter Imgae Directory: ")
+            background_dir = input("*> Enter Image Directory: ")
     
     tags_list = tags.split();
     if runGen in yes:
