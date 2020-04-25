@@ -91,15 +91,15 @@ def generate(ds_name, tags_list):
     
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
 
-        nmi = np.random.uniform(low=.1, high=9)
+        nmi = np.random.uniform(low=.1, high=6.6)
         distance = nmi * 30
       		
         bpy.context.scene.frame_set(0)
         frame = starfish.Frame(
-            pose=pose,
-            #lighting = lighting,
-            distance=distance,
-            offset= (0.5,0.5)
+            pose = pose,
+            lighting = lighting,
+            distance = distance,
+            offset = (0.5,0.5)
         )
         frame.setup(bpy.data.scenes['Scene'], bpy.data.objects["Moon"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
        # glare_value = np.random.beta(0.75, 3) - 1
