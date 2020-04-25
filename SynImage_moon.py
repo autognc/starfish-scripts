@@ -55,12 +55,11 @@ def deleteImage(name, ds_name):
 #The following is the main code for image generation
 ############################################
 NUM = 200
-SCALE = 17
 RES_X = 1920
 RES_Y = 1080
 FORMAT = 'PNG'
 MOON_RADIUS = 0.4
-MOON_CENTERX = 4.723
+MOON_CENTERX = 0
 MOON_CENTERY = 0
 def generate(ds_name, tags_list):
     start_time = time.time()
@@ -78,8 +77,6 @@ def generate(ds_name, tags_list):
     bpy.data.scenes["Scene"].node_tree.nodes["File Output"].format.file_format = 'PNG'
     output_node = bpy.data.scenes["Scene"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
-    #set black background
-    #bpy.context.scene.world.color = (0,0,0)
     
     #remove all animation
     for scene in bpy.data.scenes:
@@ -88,26 +85,21 @@ def generate(ds_name, tags_list):
         
     image_num = 0
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-    # np.random.seed(42)
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
     
     
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
-	
-   
-        #for scene in bpy.data.scenes:
-            #scene.unit_settings.scale_length = 1 / SCALE
 
-        nmi = np.random.uniform(low=0.5, high=10)
+        nmi = np.random.uniform(low=.1, high=9)
         distance = nmi * 30
-		
+      		
         bpy.context.scene.frame_set(0)
         frame = starfish.Frame(
-            #pose=pose,
-            lighting=lighting,
+            pose=pose,
+            #lighting = lighting,
             distance=distance,
-            offset= (0,0)
+            offset= (0.5,0.5)
         )
         frame.setup(bpy.data.scenes['Scene'], bpy.data.objects["Moon"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
        # glare_value = np.random.beta(0.75, 3) - 1
@@ -149,7 +141,7 @@ def generate(ds_name, tags_list):
 ############################
 def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
-
+ 
     # Create an S3 client
     s3 = boto3.client('s3')
 
