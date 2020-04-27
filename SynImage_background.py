@@ -59,6 +59,7 @@ SCALE = 17
 MOON_RADIUS = 0.4
 MOON_CENTERX = 4.723
 MOON_CENTERY = 0
+GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 def generate(ds_name, tags_list, background_dir=None):
     start_time = time.time()
 
@@ -83,9 +84,10 @@ def generate(ds_name, tags_list, background_dir=None):
         
     image_num = 0
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-    np.random.seed(42)
+    # np.random.seed(42)
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
+    moon_num = 0
     # check if background dir is not None and get list of .exr files in that directory
     if background_dir is not None:
         images_list = []
@@ -110,13 +112,14 @@ def generate(ds_name, tags_list, background_dir=None):
         if np.random.random() < 0.5:
             # mooon background - uniform distribution over disk slightly larger than moon
             
-            # NEED A WAY TO ACCOUNT BETTER WAY TO DETERMINE MOON RADIUS
+            # NEED A WAY BETTER WAY TO DETERMINE MOON RADIUS
             r = MOON_RADIUS/(moon_num+1) * np.sqrt(np.random.random())
             t = np.random.uniform(low=0, high=2 * np.pi)
             background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
+            all_space = False
         else:
             # space background
-            
+            all_space = True
             background = Euler([0, 0, 0])
 
         offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
@@ -138,19 +141,37 @@ def generate(ds_name, tags_list, background_dir=None):
             bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
             moon_num = moon_num + 1 if moon_num < num_images-1 else 0
         
-        
-        glare_value = np.random.uniform(.25, .75)
-        threshold_value = np.random.uniform(5,7)
+        if np.random.random() < 0.9:
+            # normal glare level
+            glare_type = np.random.randint(0,4)
+            glare_value = np.random.beta(3,2)-0.6
+            glare_threshold = np.random.beta(5,2)*10
+            extreme = 'NOT_EXTREME'
+        else:
+            # extreme glare level
+            glare_type = np.random.randint(0,4)
+            glare_value = np.random.beta(3,2) - 0.6
+            glare_threshold = np.random.beta(2,5)
+            extreme = 'EXTREME'
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_type]
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = threshold_value
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_threshold
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
-        output_node.file_slots[0].path = "image_"+ str(moon_num) + "_{}_{}_ ".format(glare_value, threshold_value)+ str(name) + "#"
+        formattedvals ="_{:0.2f}_{:0.2f}_ ".format(glare_value, glare_threshold)
+        if all_space:
+            output_node.file_slots[0].path = "image_"+ str(extreme) +"ALLSPACE_" + str(moon_num)\
+             + str(formattedvals) + str(name) + "#"
+        else:
+            output_node.file_slots[0].path = "image_"+ str(extreme) + str(moon_num) + formattedvals + str(name) + "#"
+
         output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
         createCSV(name, ds_name)
         
         image_num = i + 1
+
+        bpy.data.scenes['Render']
         # render
         bpy.ops.render.render(scene="Render")
         
@@ -159,8 +180,9 @@ def generate(ds_name, tags_list, background_dir=None):
         # add metadata to frame
         frame.sequence_name = ds_name
         frame.glare_value = glare_value
-        
-        
+        frame.glare_threshold = glare_threshold
+        frame.glare_type = glare_type
+        frame.extreme = extreme
     
         with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())
