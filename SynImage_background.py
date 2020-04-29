@@ -89,7 +89,6 @@ def generate(ds_name, tags_list, background_dir=None):
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
     moon_num = 0
-    print(background_dir)
     # check if background dir is not None and get list of .exr files in that directory
     if background_dir is not None:
         images_list = []
@@ -97,7 +96,6 @@ def generate(ds_name, tags_list, background_dir=None):
             if f.endswith(".exr") or f.endswith(".jpg") or f.endswith(".png"):
                 images_list.append(f)
         images_list = sorted(images_list)
-        print(images_list)
         num_images = len(images_list)
         moon_num = 0
         
@@ -140,7 +138,6 @@ def generate(ds_name, tags_list, background_dir=None):
         
         # load new Environment Texture
         if num_images != 0:
-            print(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
             bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
             moon_num = moon_num + 1 if moon_num < num_images-1 else 0
