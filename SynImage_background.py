@@ -2,6 +2,7 @@ import numpy as np
 import bpy
 import starfish
 from starfish.rotations import Spherical
+from starfish.annotation import mask
 from mathutils import Euler
 from starfish import utils
 import json
@@ -88,13 +89,15 @@ def generate(ds_name, tags_list, background_dir=None):
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
     moon_num = 0
+    print(background_dir)
     # check if background dir is not None and get list of .exr files in that directory
     if background_dir is not None:
         images_list = []
         for f in os.listdir(background_dir):
-            if f.endswith(".exr"):
+            if f.endswith(".exr") or f.endswith(".jpg") or f.endswith(".png"):
                 images_list.append(f)
         images_list = sorted(images_list)
+        print(images_list)
         num_images = len(images_list)
         moon_num = 0
         
@@ -136,26 +139,43 @@ def generate(ds_name, tags_list, background_dir=None):
         
         
         # load new Environment Texture
-        if num_images != 0: 
+        if num_images != 0:
+            print(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
             bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
             moon_num = moon_num + 1 if moon_num < num_images-1 else 0
         
+        # MAY NEED TO ADJUST DISTRIBUTIONS FOR GLARE AND BLUR?
+        # get random values for glare node parameters
+        glare_value = 0
         if np.random.random() < 0.9:
             # normal glare level
             glare_type = np.random.randint(0,4)
-            glare_value = np.random.beta(3,2)-0.6
-            glare_threshold = np.random.beta(5,2)*10
+            # glare_value = np.random.beta(3,2)-0.6
+            #glare_threshold = np.random.beta(5,2)*10
+            glare_threshold = np.random.uniform(0.5, 5)
             extreme = 'NOT_EXTREME'
         else:
             # extreme glare level
             glare_type = np.random.randint(0,4)
-            glare_value = np.random.beta(3,2) - 0.6
-            glare_threshold = np.random.beta(2,5)
+            #glare_value = np.random.beta(3,2) - 0.6
+            #glare_threshold = np.random.beta(2,5)
+            glare_threshold = np.random.uniform(0,1)
             extreme = 'EXTREME'
+
+        # configure glare node
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_type]
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_threshold
+
+        #set blur values
+        if np.random.random() < 0.2:
+            bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = np.random.pareto(1)
+            bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = np.random.pareto(1)
+        else:
+            bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = 0
+            bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = 0
+
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
         formattedvals ="_{:0.2f}_{:0.2f}_ ".format(glare_value, glare_threshold)
