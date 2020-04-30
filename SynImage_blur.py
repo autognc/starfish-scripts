@@ -101,21 +101,13 @@ def generate(ds_name, tags_list, background_dir=None):
         
     else:
         num_images = 0
-
-    #THIS SCRIPT GENERATES IMAGES WITH ZERO GLARE AND ZERO BLUR
+        bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Moon1.exr"]
+ 
     glare_value = -1
     glare_threshold = 8
-
-    # configure glare node
     bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
     bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_threshold
-        
-    #set blur values
-    blur_x = 0
-    blur_y = 0
-    bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_x
-    bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = 0
-
+	
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
     
         for scene in bpy.data.scenes:
@@ -126,14 +118,13 @@ def generate(ds_name, tags_list, background_dir=None):
 
         if np.random.random() < 0.5:
             # mooon background - uniform distribution over disk slightly larger than moon
+            
             # NEED A WAY BETTER WAY TO DETERMINE MOON RADIUS
             r = MOON_RADIUS/(moon_num+1) * np.sqrt(np.random.random())
             t = np.random.uniform(low=0, high=2 * np.pi)
             background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
-            all_space = False
         else:
             # space background
-            all_space = True
             background = Euler([0, 0, 0])
 
         offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
@@ -147,20 +138,23 @@ def generate(ds_name, tags_list, background_dir=None):
             offset=offset
         )
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
-        
-        
+
         # load new Environment Texture
         if num_images != 0:
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + images_list[moon_num])
             bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
             moon_num = moon_num + 1 if moon_num < num_images-1 else 0
 
+        #set blur values
+        blur_x = np.random.pareto(1) + 1
+        blur_y = np.random.pareto(1) + 1
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_x
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_y
+
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
-        if all_space:
-            output_node.file_slots[0].path = "image_" + "ALLSPACE_" + str(name) + "#"
-        else:
-            output_node.file_slots[0].path = "image_" + str(name) + "#"
+        
+        output_node.file_slots[0].path = "image_" + str(name) + "#"
 
         output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
@@ -180,8 +174,6 @@ def generate(ds_name, tags_list, background_dir=None):
         frame.glare_threshold = glare_threshold
         frame.blur_x = blur_x
         frame.blur_y = blur_y
-        
-    
         with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())
 
