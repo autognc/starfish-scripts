@@ -1,9 +1,9 @@
 import numpy as np
 import bpy
-import ssi
-from ssi.rotations import Spherical
+import starfish
+from starfish.rotations import Spherical
 from mathutils import Euler
-from ssi import utils
+from starfish import utils
 import json
 import math
 import time
@@ -12,7 +12,7 @@ import sys
 import boto3
 import shortuuid
 import csv
-from PIL import Image
+
 from collections import defaultdict
 import random
 
@@ -54,7 +54,7 @@ def deleteImage(name, ds_name):
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 10000
+NUM = 5
 SCALE = 17
 MOON_RADIUS = 0.4
 MOON_CENTERX = 4.723
@@ -69,7 +69,7 @@ def generate(ds_name, tags_list):
         pass
     
     data_storage_path = os.getcwd() + "/render/" + ds_name     
-    
+    print(bpy.data.scenes.keys())
     #setting file output stuff
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
@@ -107,7 +107,7 @@ def generate(ds_name, tags_list):
         offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
     
         bpy.context.scene.frame_set(0)
-        frame = ssi.Frame(
+        frame = starfish.Frame(
             background=background,
             pose=pose,
             lighting=lighting,
@@ -115,10 +115,9 @@ def generate(ds_name, tags_list):
             offset=offset
         )
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
-
         glare_value = np.random.beta(0.75, 3) - 1
         bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-    
+		
         #create name for the current image (unique to that image)
         name = shortuuid.uuid()
         output_node.file_slots[0].path = "image_" + str(name) + "#"
@@ -135,6 +134,8 @@ def generate(ds_name, tags_list):
         # add metadata to frame
         frame.sequence_name = ds_name
         frame.glare_value = glare_value
+        
+        
     
         with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())

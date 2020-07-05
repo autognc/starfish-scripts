@@ -1,8 +1,6 @@
 import numpy as np
 import bpy
 import starfish
-from starfish.rotations import Spherical
-from starfish.annotation import mask
 from mathutils import Euler
 import starfish.annotation
 from starfish.annotation import get_bounding_boxes_from_mask, get_centroids_from_mask, normalize_mask_colors
@@ -23,6 +21,8 @@ def nm_to_bu(nmi):
 
 def deg_to_rad(deg):
     return deg * np.pi / 180  # convert from degrees to radians
+def convert_to_float(i):
+    return float(i)
 
 LABEL_MAP = {
     'gateway': (206, 0, 206)
@@ -32,32 +32,12 @@ LABEL_MAP = {
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 2000
 SCALE = 17
-MOON_RADIUS = 0.4
-MOON_CENTERX = 4.723
-MOON_CENTERY = 0
 RES_X = 1024
 RES_Y = 576
-
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 def generate(ds_name, tags_list, background_dir=None):
     start_time = time.time()
-
-    
-
-    prop = bpy.context.preferences.addons['cycles'].preferences
-    prop.get_devices()
-
-    prop.compute_device_type = 'CUDA'
-
-    for device in prop.devices:
-        if device.type == 'CUDA':
-            device.use = True
-    bpy.context.scene.cycles.device = 'GPU'
-
-    for scene in bpy.data.scenes:
-        scene.cycles.device = 'GPU'
 
     #check if folder exists in render, if not, create folder
     try:
@@ -66,114 +46,155 @@ def generate(ds_name, tags_list, background_dir=None):
         pass
     
     data_storage_path = os.getcwd() + "/render/" + ds_name     
-    #setting file output stuff
-    output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
-    output_node.base_path = data_storage_path
     
-    #set black background
-    #bpy.context.scene.world.color = (0,0,0)
     
-    #remove all animation
-    for scene in bpy.data.scenes:
-        for obj in scene.objects:
-            obj.animation_data_clear()
-        
+    prop = bpy.context.preferences.addons['cycles'].preferences
+    prop.get_devices()
 
-    shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-    # np.random.seed(42)
-    poses = utils.random_rotations(NUM)
-    lightings = utils.random_rotations(NUM)
-    moon_num = 0
-    # check if background dir is not None and get list of .exr files in that directory
+    prop.compute_device_type = 'CUDA'
+
+    for device in prop.devices:
+        if device.type == 'CUDA':
+            device.use = True
+    
+    bpy.context.scene.cycles.device = 'GPU'
+
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'
+
+    # switch to correct scene
+    bpy.context.window.scene = bpy.data.scenes['Real']
+
+    # remove all animation
+    for obj in bpy.context.scene.objects:
+        obj.animation_data_clear()
+
+    # set up file outputs
+    output_node = bpy.data.scenes['Render'].node_tree.nodes["File Output"]
+    output_node.base_path = data_storage_path
+        
+    np.random.seed(5)
+    waypoints_dict = {
+        'distance': [#0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5
+            6,
+            3,
+            1,
+            
+            3,
+            6,
+            
+            3,
+            1
+        ]
+    ,
+        'offset': [
+            (0.25, 0.25),
+            (0.5, 0.5),
+            (0.75, 0.75),
+        
+            (0.7, 0.3),
+            (0.5, 0.25),
+        
+            (0.35, 0.5),
+            (0.25, 0.5)
+        ],
+        'background': [
+            (0, -90, 0),
+            (0, -105, 15),
+            (0, -120, 30),
+            
+            (0, -120, 15),
+            (0, -120, 0),
+        
+            (0, -105, 0),
+            (0, -90, 0)
+        ],
+        'pose': np.random.rand(7, 3) * 360,
+        'lighting': np.random.rand(7, 3) * 360
+    }
+
+    waypoints = []
+    for vals in zip(*waypoints_dict.values()):
+        d = dict(zip(waypoints_dict.keys(), vals))
+        waypoints.append(starfish.Frame(
+            distance=nm_to_bu(d['distance']),
+            offset=d['offset'],
+            background=Euler(list(map(deg_to_rad, d['background']))),
+            pose=Euler(list(map(deg_to_rad, d['pose']))),
+            lighting=Euler(list(map(deg_to_rad, d['lighting'])))
+        ))
+
+    counts = [300] * 6
+    blur_vals = [(0,0)]
+    glare_vals = [(0,5)]
+    for i in range(1801//5):
+        blur_x_y = np.random.uniform(2, 6, 2)
+        glare_g_t = (np.random.randint(0,4), np.random.beta(2,8)*3)
+        for j in range(0,5):
+            blur_vals.append(blur_x_y)
+            glare_vals.append(glare_g_t)
+    for scene in bpy.data.scenes:
+        scene.unit_settings.scale_length = 1 / SCALE
+        
+        
     if background_dir is not None:
         images_list = []
         img_names = []
         for f in os.listdir(background_dir):
-            if f.endswith(".exr") or f.endswith(".jpg") or f.endswith(".png"):
+            if f.endswith(".exr"):
                 imgnum = f.split("_")[1]
                 imgnum = imgnum.split(".")[0] + "." + imgnum.split(".")[1]
                 images_list.append(f)
                 img_names.append(imgnum)
         images_list = sorted(images_list)
-        num_images = len(images_list)
+        img_names = sorted(img_names, key=convert_to_float)
         moon_num = 0
         
     else:
         img_names = []
-        bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Moon1.exr"]
- 
-    glare_value = -1
-    glare_threshold = 8
-    bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-    bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_threshold
-	
-    for i, (pose, lighting) in enumerate(zip(poses, lightings)):
-    
-        for scene in bpy.data.scenes:
-            scene.unit_settings.scale_length = 1 / SCALE
-
-        nmi = np.random.uniform(low=0.5, high=6)
-        distance = nm_to_bu(nmi)
-        
-        random_name = random.choice(img_names)
-        
-        if np.random.random() < 0.5:
-            # mooon background - uniform distribution over disk slightly larger than moon - hopefully
-            
-            # NEED A WAY BETTER WAY TO DETERMINE MOON RADIUS
-            r = (45 / float(random_name))*MOON_RADIUS*2 * np.sqrt(np.random.random())
-            t = np.random.uniform(low=0, high=2 * np.pi)
-            background = Euler([0, MOON_CENTERX - (r/2) * np.cos(t), MOON_CENTERY + (r/2) * np.sin(t)])
-        else:
-            # space background
-            background = Euler([0, 0, 0])
-
-        offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
-        position = np.random.uniform(low=0.0, high=1.0, size=(3,)) 
-    
+    moon_count = 0;
+    # first few moons are too big
+    img_names = img_names[12:]
+    print(img_names)
+    num_moons = len(img_names)
+    print(num_moons)
+    for i, frame in enumerate(starfish.Sequence.interpolated(waypoints, counts)):
         bpy.context.scene.frame_set(0)
-        frame = starfish.Frame(
-            position=position,
-            background=background,
-            pose=pose,
-            lighting=lighting,
-            distance=distance,
-            offset=offset
-        )
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
+    
+        #create name for the current image (unique to that image)
+        name = str(i).zfill(5)
+        output_node.file_slots[0].path = "image_" + "#" + str(name)
+        output_node.file_slots[1].path = "mask_" + "#" + str(name)
+
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_vals[i][0] 
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_vals[i][1] 
+        
+        glare_value = 0.5
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_vals[i][0]]
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_vals[i][1]       
         
         
         # load new Environment Texture
-        if img_names: 
-            image = bpy.data.images.load(filepath = background_dir + "/image_" + random_name + ".exr")
-            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image        
-        
-
-
-        #set blur values
-        blur_x = np.random.uniform(2,8)
-        blur_y = np.random.uniform(2,8)
-        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_x
-        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_y
-
-        #create name for the current image (unique to that image)
-        name = shortuuid.uuid() 
-        output_node.file_slots[0].path = "image_"+ str(name) + "#"
-        output_node.file_slots[1].path = "mask_" + str(name) + "#"
-
-        mask_filepath = os.path.join(output_node.base_path, "mask_" + str(name) + "0.png")
-        meta_filepath = os.path.join(output_node.base_path, "meta_" + str(name) + "0.json")
-        
-
+        if img_names:
+            moon_name = img_names[moon_num]
+            image = bpy.data.images.load(filepath = background_dir + "/image_" + moon_name + ".exr")
+            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+            moon_count += 1
+            if moon_count > (1800//num_moons+1):
+                moon_num = (moon_num + 1) % num_moons
+                moon_count = 0;    
         # render
         bpy.ops.render.render(scene="Render")
         
-        #Tag the pictures
+        # Tag the pictures
         frame.tags = tags_list
         # add metadata to frame
         frame.sequence_name = ds_name
-        frame.glare_value = glare_value
-        
+
+        mask_filepath = os.path.join(output_node.base_path, "mask_0" + str(name) + ".png")
+        meta_filepath = os.path.join(output_node.base_path, "meta_0" + str(name) + ".json")
 
         # run color normalization with labels plus black background
         normalize_mask_colors(mask_filepath, list(LABEL_MAP.values()) + [(0, 0, 0)])
@@ -181,11 +202,8 @@ def generate(ds_name, tags_list, background_dir=None):
         # get bbox and centroid and add them to metadata
         frame.bboxes = get_bounding_boxes_from_mask(mask_filepath, LABEL_MAP)
         frame.centroids =  get_centroids_from_mask(mask_filepath, LABEL_MAP)
-
-        frame.glare_threshold = glare_threshold
-        frame.blur_x = blur_x
-        frame.blur_y = blur_y
-        with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
+    
+        with open(meta_filepath, "w") as f:
             f.write(frame.dumps())
 
     print("===========================================" + "\r")
@@ -258,14 +276,14 @@ def main():
     dataset_name = input("*> Enter name for folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     tags = input("*> Enter tags for the batch seperated with space: ")
-
+    
     # prompt user for directory of background images
     background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
     if background_sequence in yes:
         background_dir = input("*> Enter Image Directory: ")
         while not os.path.isdir(background_dir):
             background_dir = input("*> Enter Image Directory: ")
-    
+
     tags_list = tags.split();
     if runGen in yes:
         if background_sequence in yes:

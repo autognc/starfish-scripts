@@ -1,8 +1,6 @@
 import numpy as np
 import bpy
 import starfish
-from starfish.rotations import Spherical
-from starfish.annotation import mask
 from mathutils import Euler
 import starfish.annotation
 from starfish.annotation import get_bounding_boxes_from_mask, get_centroids_from_mask, normalize_mask_colors
@@ -32,20 +30,69 @@ LABEL_MAP = {
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 2000
+NUM = 500
 SCALE = 17
 MOON_RADIUS = 0.4
 MOON_CENTERX = 4.723
 MOON_CENTERY = 0
 RES_X = 1024
 RES_Y = 576
-
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
-def generate(ds_name, tags_list, background_dir=None):
+
+def check_nodes(filters, node_tree):
+    """
+        check if requested filters are in node tree of given blender file
+    """
+    _filters = []
+    for f in filters:
+        if f in node_tree.nodes.keys():
+            _filters.append(f)
+        else:
+            print("{} is not in the node tree".format(f))
+    return _filters
+
+def reset_filter_nodes(node_tree):
+    """
+        resets filter nodes to default values that will not modify final image
+    """
+    
+    if 'Glare' in node_tree.nodes.keys():
+        node_tree.nodes['Glare'].mix = -1
+        node_tree.nodes['Glare'].threshold = 8
+    
+    if 'Blur' in node_tree.nodes.keys():
+        node_tree.nodes['Blur'].size_x = 0
+        node_tree.nodes['Blur'].size_y = 0
+    
+def set_filter_nodes(filters, node_tree):
+    """
+        set filter node parameters to random value
+    """
+    
+    if 'Glare' in filters:
+        
+        glare_value = 0.5
+        glare_type = np.random.randint(0,4)
+        glare_threshold = np.random.beta(2,8)
+        
+        # configure glare node
+        node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_type]
+        node_tree.nodes["Glare"].mix = glare_value
+        node_tree.nodes["Glare"].threshold = glare_threshold
+
+    if 'Blur' in filters:
+        #set blur values
+        blur_x = np.random.uniform(2, 8)
+        blur_y = np.random.uniform(2, 8)
+        node_tree.nodes["Blur"].size_x = blur_x
+        node_tree.nodes["Blur"].size_y = blur_y
+
+def generate(ds_name, tags_list, filters, background_dir=None, rand_backgrounds=False):
+    
     start_time = time.time()
 
     
-
+    # search for available GPUs to speed up generation time
     prop = bpy.context.preferences.addons['cycles'].preferences
     prop.get_devices()
 
@@ -54,10 +101,12 @@ def generate(ds_name, tags_list, background_dir=None):
     for device in prop.devices:
         if device.type == 'CUDA':
             device.use = True
+    
     bpy.context.scene.cycles.device = 'GPU'
 
     for scene in bpy.data.scenes:
         scene.cycles.device = 'GPU'
+
 
     #check if folder exists in render, if not, create folder
     try:
@@ -70,9 +119,6 @@ def generate(ds_name, tags_list, background_dir=None):
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
     
-    #set black background
-    #bpy.context.scene.world.color = (0,0,0)
-    
     #remove all animation
     for scene in bpy.data.scenes:
         for obj in scene.objects:
@@ -80,33 +126,39 @@ def generate(ds_name, tags_list, background_dir=None):
         
 
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-    # np.random.seed(42)
+    
+    #np.random.seed(42)
+    
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
-    moon_num = 0
+    
+    images_list = []
+    img_names = []
+    
     # check if background dir is not None and get list of .exr files in that directory
     if background_dir is not None:
-        images_list = []
-        img_names = []
         for f in os.listdir(background_dir):
-            if f.endswith(".exr") or f.endswith(".jpg") or f.endswith(".png"):
-                imgnum = f.split("_")[1]
-                imgnum = imgnum.split(".")[0] + "." + imgnum.split(".")[1]
-                images_list.append(f)
-                img_names.append(imgnum)
+            if not rand_backgrounds:
+                # background images for dynamically sized moon should be formatted: image_<distance>.exr
+                # where distance is a float ie. 150.859, this is used to calculate the correct camera rotation so that the moon is in frame
+                if f.endswith(".exr") or f.endswith(".png") or f.endswith(".jpg"):
+                    imgnum = f.split("_")[1]
+                    imgnum = imgnum.split(".")[0] + "." + imgnum.split(".")[1]
+                    img_names.append(imgnum)
+                    images_list.append(f)
+            else:
+                if f.endswith(".exr") or f.endswith(".png") or f.endswith(".jpg"):
+                    img_names.append(f)
+                    images_list.append(f)
         images_list = sorted(images_list)
-        num_images = len(images_list)
-        moon_num = 0
-        
-    else:
-        img_names = []
-        bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Moon1.exr"]
- 
-    glare_value = -1
-    glare_threshold = 8
-    bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-    bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_threshold
-	
+
+    node_tree = bpy.data.scenes["Render"].node_tree
+    check_nodes(filters, node_tree)
+    reset_filter_nodes(node_tree)
+    
+    # set default background incase base blender file is messed up
+    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Moon1.exr"]
+    
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
     
         for scene in bpy.data.scenes:
@@ -114,19 +166,31 @@ def generate(ds_name, tags_list, background_dir=None):
 
         nmi = np.random.uniform(low=0.5, high=6)
         distance = nm_to_bu(nmi)
-        
-        random_name = random.choice(img_names)
-        
-        if np.random.random() < 0.5:
-            # mooon background - uniform distribution over disk slightly larger than moon - hopefully
-            
-            # NEED A WAY BETTER WAY TO DETERMINE MOON RADIUS
-            r = (45 / float(random_name))*MOON_RADIUS*2 * np.sqrt(np.random.random())
-            t = np.random.uniform(low=0, high=2 * np.pi)
-            background = Euler([0, MOON_CENTERX - (r/2) * np.cos(t), MOON_CENTERY + (r/2) * np.sin(t)])
+
+        if img_names:
+            random_name = random.choice(img_names)
+    
+        if not rand_backgrounds:
+            # 75/25 split between images with moon background and deep space background
+            if np.random.uniform(0, 1) < 0.75:
+                if img_names:
+                    # moon background - uniform distribution over disk slightly larger than moon - hopefully
+                    r = (45 / float(random_name))*MOON_RADIUS*2 * np.sqrt(np.random.random())
+                    t = np.random.uniform(low=0, high=2 * np.pi)
+                    background = Euler([0, MOON_CENTERX - (r/2) * np.cos(t), MOON_CENTERY + (r/2) * np.sin(t)])
+                else:
+                    r = MOON_RADIUS * np.sqrt(np.random.random())
+                    t = np.random.uniform(low=0, high=2 * np.pi)
+                    background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
+            else:
+                background = Euler([0,0,0])
+
         else:
-            # space background
-            background = Euler([0, 0, 0])
+            # no randomized background images should have a [0,0,0] background as gateway will be centered on weird distortion pattern
+            r = MOON_RADIUS * np.sqrt(np.random.random())
+            t = np.random.uniform(low=0, high=2 * np.pi)
+            background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
+    
 
         offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
         position = np.random.uniform(low=0.0, high=1.0, size=(3,)) 
@@ -144,18 +208,15 @@ def generate(ds_name, tags_list, background_dir=None):
         
         
         # load new Environment Texture
-        if img_names: 
-            image = bpy.data.images.load(filepath = background_dir + "/image_" + random_name + ".exr")
-            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image        
+        if img_names:
+            if not rand_backgrounds:
+                image = bpy.data.images.load(filepath = background_dir + "/image_" + random_name + ".exr")
+                
+            else:
+                image = bpy.data.images.load(filepath = os.path.join(background_dir, random.choice(images_list)))
+            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
         
-
-
-        #set blur values
-        blur_x = np.random.uniform(2,8)
-        blur_y = np.random.uniform(2,8)
-        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_x
-        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_y
-
+        set_filter_nodes(filters, node_tree)
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
         output_node.file_slots[0].path = "image_"+ str(name) + "#"
@@ -172,8 +233,6 @@ def generate(ds_name, tags_list, background_dir=None):
         frame.tags = tags_list
         # add metadata to frame
         frame.sequence_name = ds_name
-        frame.glare_value = glare_value
-        
 
         # run color normalization with labels plus black background
         normalize_mask_colors(mask_filepath, list(LABEL_MAP.values()) + [(0, 0, 0)])
@@ -181,10 +240,7 @@ def generate(ds_name, tags_list, background_dir=None):
         # get bbox and centroid and add them to metadata
         frame.bboxes = get_bounding_boxes_from_mask(mask_filepath, LABEL_MAP)
         frame.centroids =  get_centroids_from_mask(mask_filepath, LABEL_MAP)
-
-        frame.glare_threshold = glare_threshold
-        frame.blur_x = blur_x
-        frame.blur_y = blur_y
+        
         with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())
 
@@ -259,23 +315,38 @@ def main():
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     tags = input("*> Enter tags for the batch seperated with space: ")
 
-    # prompt user for directory of background images
-    background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
-    if background_sequence in yes:
-        background_dir = input("*> Enter Image Directory: ")
-        while not os.path.isdir(background_dir):
-            background_dir = input("*> Enter Image Directory: ")
-    
     tags_list = tags.split();
+    
+    filters = []
+    
+    glare = input("*> Would you like to generate images with glare?[y/n]: ")
+    if glare in yes:
+        filters.append("Glare")
+    
+    blur = input("*> Would you like to generate images with blur?[y/n]: ")
+    if blur in yes:
+        filters.append("Blur")
+    
     if runGen in yes:
+        # prompt user for directory of background images
+        background_sequence = input("*> Would you like to use dynamicly sized moon images?[y/n]: ")
         if background_sequence in yes:
-            generate(dataset_name, tags_list, background_dir)
+            background_dir = input("*> Enter Image Directory: ")
+            while not os.path.isdir(background_dir):
+                background_dir = input("*> Enter Image Directory: ")
+            generate(dataset_name, tags_list, filters, background_dir)
         else:
-            generate(dataset_name, tags_list)
+            random_sequence = input("*> Would you like to use randomized backgrounds?[y/n]: ")
+            if random_sequence in yes:
+                background_dir = input("*> Enter Image Directory: ")
+                while not os.path.isdir(background_dir):
+                    background_dir = input("*> Enter Image Directory: ")
+                generate(dataset_name, tags_list, filters, background_dir, rand_backgrounds=True)
+        generate(dataset_name, tags_list, filters)
     if runUpload in yes: 
         upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
 
 if __name__ == "__main__":
     main()
-    
+

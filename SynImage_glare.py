@@ -198,9 +198,6 @@ def generate(ds_name, tags_list, background_dir=None):
     print("===========================================" + "\r")
     time_taken = time.time() - start_time
     print("------Time Taken: %s seconds----------" %(time_taken) + "\r")
-    print("Number of images generated: " + str(image_num) + "\r")
-    print("Total number of files: " + str(image_num * 5) + "\r")
-    print("Average time per image: " + str(time_taken / image_num))
     print("Data stored at: " + data_storage_path)
     bpy.ops.wm.quit_blender()
 

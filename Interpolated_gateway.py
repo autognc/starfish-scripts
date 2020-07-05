@@ -1,9 +1,9 @@
 import numpy as np
 import bpy
-import ssi
+import starfish
 from mathutils import Euler
-from ssi.core import utils
-from ssi import postprocessing
+from starfish import utils
+from starfish import postprocessing
 import json
 import math
 import time
@@ -12,7 +12,6 @@ import sys
 import boto3
 import shortuuid
 import csv
-from PIL import Image
 from collections import defaultdict
 import random
 
@@ -96,7 +95,7 @@ def generate(ds_name, tags_list):
     waypoints = []
     for vals in zip(*waypoints_dict.values()):
         d = dict(zip(waypoints_dict.keys(), vals))
-        waypoints.append(ssi.Frame(
+        waypoints.append(starfish.Frame(
             distance=nm_to_bu(d['distance']),
             offset=d['offset'],
             background=Euler(list(map(deg_to_rad, d['background']))),
@@ -109,7 +108,7 @@ def generate(ds_name, tags_list):
     for scene in bpy.data.scenes:
         scene.unit_settings.scale_length = 1 / SCALE
 
-    for i, frame in enumerate(ssi.Sequence.interpolated(waypoints, counts)):
+    for i, frame in enumerate(starfish.Sequence.interpolated(waypoints, counts)):
         bpy.context.scene.frame_set(0)
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
     

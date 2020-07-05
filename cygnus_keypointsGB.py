@@ -37,6 +37,9 @@ NUM = 10000
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 
 def check_nodes(filters, node_tree):
+    """
+        check if requested filters are in node tree of given blender file
+    """
     _filters = []
     for f in filters:
         if f in node_tree.nodes.keys():
@@ -59,6 +62,9 @@ def reset_filter_nodes(node_tree):
         node_tree.nodes['Blur'].size_y = 0
     
 def set_filter_nodes(filters, node_tree):
+    """
+        set filter node parameters to random value
+    """
     
     if 'Glare' in filters:
         
@@ -139,6 +145,8 @@ def generate(ds_name, filters, background_dir=None):
         f.write(code)
     
     num_images = 0
+    
+    # get images from background directory
     if background_dir is not None:
         images_list = []
         for f in os.listdir(background_dir):
@@ -163,9 +171,11 @@ def generate(ds_name, filters, background_dir=None):
         if num_images > 0:
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + np.random.choice(images_list))
             bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
-        # render
-        
+
+        # set filters to random values
         set_filter_nodes(filters, node_tree)
+        
+        # render
         bpy.ops.render.render(scene="Render")
         # mask/bbox stuff
         mask = starfish.annotation.normalize_mask_colors(os.path.join(data_storage_path, f'mask_0{name}.png'),

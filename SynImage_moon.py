@@ -3,6 +3,7 @@ import bpy
 import starfish
 from starfish.rotations import Spherical
 from mathutils import Euler
+from mathutils import Quaternion
 from starfish import utils
 import json
 import math
@@ -54,10 +55,10 @@ def deleteImage(name, ds_name):
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 200
-RES_X = 1920
-RES_Y = 1080
-FORMAT = 'PNG'
+NUM = 120
+RES_X = 4096
+RES_Y = 2048
+FORMAT = 'OPEN_EXR'
 MOON_RADIUS = 0.4
 MOON_CENTERX = 0
 MOON_CENTERY = 0
@@ -69,12 +70,24 @@ def generate(ds_name, tags_list):
         os.mkdir("render/" + ds_name)
     except Exception:
         pass
+    prop = bpy.context.preferences.addons['cycles'].preferences
+    prop.get_devices()
+
+    prop.compute_device_type = 'CUDA'
+
+    for device in prop.devices:
+        if device.type == 'CUDA':
+            device.use = True
     
+    bpy.context.scene.cycles.device = 'GPU'
+
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'    
     data_storage_path = os.getcwd() + "/render/" + ds_name     
     bpy.data.scenes['Scene'].render.resolution_x = RES_X
     bpy.data.scenes['Scene'].render.resolution_y = RES_Y
     #setting file output stuff
-    bpy.data.scenes["Scene"].node_tree.nodes["File Output"].format.file_format = 'PNG'
+    bpy.data.scenes["Scene"].node_tree.nodes["File Output"].format.file_format = FORMAT
     output_node = bpy.data.scenes["Scene"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
     
@@ -91,13 +104,12 @@ def generate(ds_name, tags_list):
     
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
 
-        nmi = np.random.uniform(low=.1, high=6.6)
+        nmi = .3 + (6.3*i/NUM)
         distance = nmi * 30
-      		
         bpy.context.scene.frame_set(0)
         frame = starfish.Frame(
-            pose = pose,
-            lighting = lighting,
+			pose =  Quaternion([ 0.697, 0.32, -0.21, 0.59]),
+            #lighting = lighting,
             distance = distance,
             offset = (0.5,0.5)
         )
@@ -107,7 +119,7 @@ def generate(ds_name, tags_list):
 		
         #create name for the current image (unique to that image)
         name = shortuuid.uuid() 
-        output_node.file_slots[0].path = "image_" + str(name) + "#"
+        output_node.file_slots[0].path = "image_{}".format(distance)
         #output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
         createCSV(name, ds_name)
