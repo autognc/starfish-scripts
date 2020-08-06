@@ -11,9 +11,8 @@ import boto3
 import shortuuid
 import subprocess
 import tqdm
-"""
-    script for generating cygnus training data with glare, blur, and domain randomized backgrounds.
-"""
+import cv2
+
 sys.stdout = sys.stderr
 
 BACKGROUND_COLOR = (0, 0, 0)
@@ -35,8 +34,12 @@ OG_KEYPOINTS = {
     'barrel_bottom': (0, 0, -3.6295),
     'barrel_top': (0, 0, 3.18566)
 }
-NUM = 2000
+NUM = 5
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
+RES_X = 1024
+RES_Y = 1024
+GEN_RES_X = 1424
+GEN_RES_Y = 1424
 
 def check_nodes(filters, node_tree):
     """
@@ -84,22 +87,65 @@ def set_filter_nodes(filters, node_tree):
         glare_value = 0.5
         glare_type = np.random.randint(0,4)
         glare_threshold = np.random.beta(2,8)
+        result_dict['Glare']['type'] = GLARE_TYPES[glare_type]
+        result_dict['Glare']['mix'] = glare_value
+        result_dict['Glare']['threshold'] = glare_threshold
         # configure glare node
-        node_tree.nodes["Glare"].glare_type = result_dict['Glare']['type'] = GLARE_TYPES[glare_type]
-        node_tree.nodes["Glare"].mix = result_dict['Glare']['mix'] = glare_value
-        node_tree.nodes["Glare"].threshold = result_dict['Glare']['threshold'] = glare_threshold
+        node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_type]
+        node_tree.nodes["Glare"].mix = glare_value
+        node_tree.nodes["Glare"].threshold = glare_threshold
 
     if 'Blur' in filters:
         #set blur values
         blur_x = np.random.uniform(10, 30)
         blur_y = np.random.uniform(10, 30)
-        node_tree.nodes["Blur"].size_x = result_dict['Blur']['size_x'] = blur_x
-        node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
+        result_dict['Blur']['size_x'] = blur_x
+        result_dict['Blur']['size_y'] = blur_y
+        node_tree.nodes["Blur"].size_x = blur_x
+        node_tree.nodes["Blur"].size_y = blur_y
+    
     return result_dict
+
+def get_rand_offsets(num):
+    """
+        generate offsets so cygnus is placed in a frame around the
+        original image
         
-
-
-def generate(ds_name, tags, filters, background_dir=None):
+        inner rectangle is the actual training image after cropping,
+        offsets place cygnus in the outer frame, allowing bboxes to be extracted 
+        for partially occluded images
+         _______________
+        |  ___________  |
+        |  |          | |
+        |  |          | |
+        |  |__________| |     
+        |_ _ _ _ _ _ _  |
+    """
+    offsets =[]
+    while len(offsets) < num:
+        x_y = np.random.uniform(0.20, 0.80, size=(2,))
+        if not (0.30 < x_y[0] < 0.70 and  0.30 < x_y[1] < .70):
+            offsets.append(x_y)
+    return offsets
+    
+def crop_based_on_bbox(image, bbox, org_res, crop_res):
+    x_mid = org_res // 2
+    y_mid = org_res // 2
+    x_start = 0
+    y_start = 0
+    if bbox['ymax'] < y_mid:
+        y_start = org_res - crop_res
+        bbox['ymin'] = bbox['ymin'] - y_start
+        bbox['ymax'] = bbox['ymax'] - y_start
+    if bbox['xmax'] < x_mid:
+        x_start = org_res - crop_res
+        bbox['xmin'] = bbox['xmin'] - x_start
+        bbox['xmax'] = bbox['xmax'] - x_start
+    
+    
+    return image[y_start : y_start + crop_res, x_start : x_start + crop_res], bbox ## bboxes dont seem to be modified permanently
+    
+def generate(ds_name, filters, background_dir=None):
     start_time = time.time()
 
     # check if folder exists in render, if not, create folder
@@ -134,12 +180,16 @@ def generate(ds_name, tags, filters, background_dir=None):
     bpy.context.scene.frame_set(0)
 
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-
+    offsets = get_rand_offsets(NUM)
+    print(offsets)
+    bpy.data.scenes['Render'].render.resolution_x = GEN_RES_X
+    bpy.data.scenes['Render'].render.resolution_y = GEN_RES_Y
     sequence = starfish.Sequence.standard(
         pose=starfish.utils.random_rotations(NUM),
         lighting=starfish.utils.random_rotations(NUM),
         background=starfish.utils.random_rotations(NUM),
-        distance=np.random.uniform(low=35, high=75, size=(NUM,))
+        distance=np.random.uniform(low=35, high=75, size=(NUM,)),
+        offset = get_rand_offsets(NUM)
     )
 
     keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
@@ -180,7 +230,7 @@ def generate(ds_name, tags, filters, background_dir=None):
 
         # create name for the current image (unique to that image)
         name = shortuuid.uuid()
-        output_node.file_slots[0].path = "image_#" + str(name)
+        output_node.file_slots[0].path = "org_image_#" + str(name)
         output_node.file_slots[1].path = "mask_#" + str(name)
         if num_images > 0:
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + np.random.choice(images_list))
@@ -191,10 +241,11 @@ def generate(ds_name, tags, filters, background_dir=None):
         
         # render
         bpy.ops.render.render(scene="Render")
+        
         # mask/bbox stuff
         mask = starfish.annotation.normalize_mask_colors(os.path.join(data_storage_path, f'mask_0{name}.png'),
                                                          list(LABEL_MAP_SINGLE.values())[0] + [BACKGROUND_COLOR])
-        frame.bboxes = starfish.annotation.get_bounding_boxes_from_mask(mask, LABEL_MAP_SINGLE)
+        bboxes = starfish.annotation.get_bounding_boxes_from_mask(mask, LABEL_MAP_SINGLE)
         frame.centroids = starfish.annotation.get_centroids_from_mask(mask, LABEL_MAP_SINGLE)
         frame.keypoints = starfish.annotation.project_keypoints_onto_image(keypoints, bpy.data.scenes['Real'],
                                                                            bpy.data.objects['Cygnus_Real'], bpy.data.objects['Camera_Real'])
@@ -203,8 +254,12 @@ def generate(ds_name, tags, filters, background_dir=None):
         frame.og_keypoints = {k: v for k, v in zip(OG_KEYPOINTS.keys(), og_keypoints)}
 
         frame.sequence_name = ds_name
-        frame.tags = tags
+        img = cv2.imread(os.path.join(data_storage_path, f'org_image_0{name}.png'))
+        
+        cropped_img, bboxes['cygnus'] = crop_based_on_bbox(img, bboxes['cygnus'], GEN_RES_X, RES_X)
+        cv2.imwrite(os.path.join(data_storage_path, f'image_0{name}.png'), cropped_img)
         # dump data to json
+        frame.bboxes = bboxes
         with open(os.path.join(output_node.base_path, "meta_0" + str(name)) + ".json", "w") as f:
             f.write(frame.dumps())
             f.write('\n')
@@ -212,8 +267,8 @@ def generate(ds_name, tags, filters, background_dir=None):
     print("===========================================" + "\r")
     time_taken = time.time() - start_time
     print("------Time Taken: %s seconds----------" % (time_taken) + "\r")
-    print("Number of images generated: " + str(i) + "\r")
-    print("Average time per image: " + str(time_taken / i))
+    print("Number of images generated: " + str(i+1) + "\r")
+    print("Average time per image: " + str(time_taken / (i+1)))
     print("Data stored at: " + data_storage_path)
     bpy.ops.wm.quit_blender()
 
@@ -222,7 +277,6 @@ def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
 
     subprocess.run(['aws', 's3', 'sync', os.path.join('render', ds_name), f's3://{bucket_name}/{ds_name}'])
-
 
 def validate_bucket_name(bucket_name):
     s3t = boto3.resource('s3')
@@ -252,7 +306,7 @@ def main():
 
     dataset_name = input("*> Enter name for dataset/folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
-    tags = input("*> Enter tags for the batch seperated with space: ")
+    
     filters = []
     
     glare = input("*> Would you like to generate images with glare?[y/n]: ")
@@ -263,15 +317,14 @@ def main():
     if blur in yes:
         filters.append("Blur")
 
-    tags_list = tags.split()
     background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
     if background_sequence in yes:
         background_dir = input("*> Enter Image Directory: ")
         while not os.path.isdir(background_dir):
             background_dir = input("*> Enter Image Directory: ")
-        generate(dataset_name, tags_list, filters, background_dir)
+        generate(dataset_name, filters, background_dir)
     else:
-        generate(dataset_name, tags_list, filters)
+        generate(dataset_name, filters)
     if runUpload in yes:
         upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
