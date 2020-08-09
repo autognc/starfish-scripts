@@ -139,7 +139,8 @@ def generate(ds_name, tags, filters, background_dir=None):
         pose=starfish.utils.random_rotations(NUM),
         lighting=starfish.utils.random_rotations(NUM),
         background=starfish.utils.random_rotations(NUM),
-        distance=np.random.uniform(low=35, high=75, size=(NUM,))
+        distance=np.random.uniform(low=35, high=75, size=(NUM,)),
+        offset=np.random.uniform(low=0.2, high=0.8, size=(NUM,2))
     )
 
     keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
