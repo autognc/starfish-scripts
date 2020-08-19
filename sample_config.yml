@@ -1,0 +1,37 @@
+#sample config file for gen_cygnus_dataset.py
+s3_bucket: skr-images-training #specify bucket to upload to s3
+imagesets:
+    cygnus_g_b_o_drb_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        filters: #list filters here (glare and blur only options atm)
+            - glare
+            - blur
+        backgrounds: ./random #path to directory of random background images
+        occlusion: true
+    cygnus_g_o_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        filters: #list filters here (glare and blur only options atm)
+            - glare
+        occlusion: true #if this option is passed will only generate occluded images
+    cygnus_drb_o_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        backgrounds: ./random
+        occlusion: true #if this option is passed will only generate occluded images
+    cygnus_b_o_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        filters: #list filters here (glare and blur only options atm)
+            - blur
+        occlusion: true #if this option is passed will only generate occluded images
+    cygnus_norm_4k:
+        num: 4000 # value defaults to 10, maximum of 10000.
+    cygnus_g_b_drb_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        filters: #list filters here (glare and blur only options atm)
+            - glare
+            - blur
+        backgrounds: ./random #path to directory of random background images
+    cygnus_g_b_1k:
+        num: 1000 # value defaults to 10, maximum of 10000.
+        filters: #list filters here (glare and blur only options atm)
+            - glare
+            - blur
