@@ -15,6 +15,8 @@ import tqdm
 """
     script for generating cygnus training data with glare, blur, and domain randomized backgrounds.
 """
+
+
 def enable_gpus(device_type, use_cpus=False):
     preferences = bpy.context.preferences
     cycles_preferences = preferences.addons["cycles"].preferences
@@ -37,7 +39,8 @@ def enable_gpus(device_type, use_cpus=False):
             activated_gpus.append(device.name)
 
     cycles_preferences.compute_device_type = device_type
-    bpy.context.scene.cycles.device = "GPU"
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'
 
     return activated_gpus
 
@@ -67,6 +70,7 @@ OG_KEYPOINTS = {
 
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 
+
 def check_nodes(filters, node_tree):
     """
         check if requested filters are in node tree of given blender file
@@ -80,6 +84,7 @@ def check_nodes(filters, node_tree):
             sys.exit()
     return _filters
 
+
 def reset_filter_nodes(node_tree):
     """
         resets filters nodes to default values that will not modify final image
@@ -92,7 +97,8 @@ def reset_filter_nodes(node_tree):
     if 'Blur' in node_tree.nodes.keys():
         node_tree.nodes['Blur'].size_x = 0
         node_tree.nodes['Blur'].size_y = 0
-    
+
+
 def set_filter_nodes(filters, node_tree):
     """
         set filter node parameters to random value
@@ -126,7 +132,8 @@ def set_filter_nodes(filters, node_tree):
         node_tree.nodes["Blur"].size_x = result_dict['Blur']['size_x'] = blur_x
         node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
     return result_dict
-        
+
+
 def get_occluded_offsets(num):
     offsets =[]
     while len(offsets) < num:
@@ -134,6 +141,7 @@ def get_occluded_offsets(num):
         if not ( 0.1 < x_y[0] < 0.9 and 0.1 < x_y[1] < 0.9 ):
             offsets.append(x_y)
     return offsets
+
 
 def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=None):
     start_time = time.time()
@@ -151,21 +159,7 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
     
     data_storage_path = os.path.join(os.getcwd(), "render", ds_name)
 
-    """
-    prop = bpy.context.preferences.addons['cycles'].preferences
-    prop.get_devices()
-
-    prop.compute_device_type = 'CUDA'
-
-    for device in prop.devices:
-        if device.type == 'CUDA':
-            device.use = True
-    
-    bpy.context.scene.cycles.device = 'GPU'
-
-    for scene in bpy.data.scenes:
-        scene.cycles.device = 'GPU'
-    """
+    enable_gpus("CUDA", True)
     output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
 
@@ -220,8 +214,10 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
     
     node_tree = bpy.data.scenes["Render"].node_tree
     reset_filter_nodes(node_tree)
+    
     # set default background in case base blender file is messed up
     bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["HDRI_Earth_3.exr"]
+    
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
@@ -253,6 +249,11 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
 
         frame.sequence_name = ds_name
         frame.tags = tags
+        frame.focal_length = bpy.data.cameras["Camera"].lens
+        frame.sensor_width = bpy.data.cameras["Camera"].sensor_width
+        frame.sensor_height = bpy.data.cameras["Camera"].sensor_height
+        frame.lens_unit = bpy.data.cameras["Camera"].lens_unit
+
         # dump data to json
         with open(os.path.join(output_node.base_path, "meta_0" + str(name)) + ".json", "w") as f:
             f.write(frame.dumps())
@@ -271,7 +272,9 @@ def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
 
     subprocess.run(['aws', 's3', 'sync', os.path.join('render', ds_name), f's3://{bucket_name}/{ds_name}'])
-
+    time.sleep(5)
+    # delete local imageset to save space on lab computer.
+    subprocess.run(['rm', '-rf', os.path.join('render', ds_name)])
 
 def validate_bucket_name(bucket_name):
     s3t = boto3.resource('s3')
