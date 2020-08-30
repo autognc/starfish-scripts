@@ -178,35 +178,29 @@ def generate(ds_name, tags, filters, background_dir=None):
     print(used_materials)
     settable_textures = []  
     for m in used_materials:
-        print(m)
-        mat_nodes = bpy.data.materials[m].node_tree.nodes
-        new_texture = mat_nodes.new('ShaderNodeTexImage')
-        #bpy.data.materials[m].node_tree.links.new(new_texture.outputs['Color'], mat_nodes['Material Output'].inputs[2])
-        #for node in mat_nodes.keys():
-            #if 'Color' in mat_nodes[node].inputs.keys():
-                #print(node)
-                #bpy.data.materials[m].node_tree.links.new(new_texture.outputs['Color'], mat_nodes[node].inputs[0])
-        if 'Material Output' in mat_nodes.keys():
-            # using glossy material node. maybe a different type is better
-            new_surface = mat_nodes.new('ShaderNodeBsdfGlossy')
-            
-            # create geometry node this makes textures look better for some reason
-            new_geometry = mat_nodes.new('ShaderNodeNewGeometry')
-            # remove all links to material output node
-            for inputs in mat_nodes['Material Output'].inputs:
-                for link in inputs.links:
-                    bpy.data.materials[m].node_tree.links.remove(link)
-                    
-            #link position output of geometry node to vector input of image texture node
-            bpy.data.materials[m].node_tree.links.new(new_geometry.outputs[0] , new_texture.inputs['Vector'])
-            
-            #link output of image texture node to color input of glossy bdsf shader node        
-            bpy.data.materials[m].node_tree.links.new(new_texture.outputs['Color'], new_surface.inputs[0])
-            
-            #link output of glossy bdsf shader node to input of material output node
-            bpy.data.materials[m].node_tree.links.new(mat_nodes['Material Output'].inputs[0], new_surface.outputs[0])
-            
-            settable_textures.append(new_texture)
+        if 'logo' not in m.lower():
+            mat_nodes = bpy.data.materials[m].node_tree.nodes
+            new_texture = mat_nodes.new('ShaderNodeTexImage')
+            if 'Material Output' in mat_nodes.keys():
+                # using glossy material node. maybe a different type is better
+                new_surface = mat_nodes.new('ShaderNodeBsdfGlossy')
+                # create geometry node this makes textures look better for some reason
+                new_geometry = mat_nodes.new('ShaderNodeNewGeometry')
+                # remove all links to material output node
+                for inputs in mat_nodes['Material Output'].inputs:
+                    for link in inputs.links:
+                        bpy.data.materials[m].node_tree.links.remove(link)
+                        
+                #link position output of geometry node to vector input of image texture node
+                bpy.data.materials[m].node_tree.links.new(new_geometry.outputs[0] , new_texture.inputs['Vector'])
+                
+                #link output of image texture node to color input of glossy bdsf shader node        
+                bpy.data.materials[m].node_tree.links.new(new_texture.outputs['Color'], new_surface.inputs[0])
+                
+                #link output of glossy bdsf shader node to input of material output node
+                bpy.data.materials[m].node_tree.links.new(mat_nodes['Material Output'].inputs[0], new_surface.outputs[0])
+                
+                settable_textures.append(new_texture)
     
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
