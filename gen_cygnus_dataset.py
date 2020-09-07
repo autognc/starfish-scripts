@@ -141,8 +141,9 @@ def get_occluded_offsets(num):
         if not ( 0.1 < x_y[0] < 0.9 and 0.1 < x_y[1] < 0.9 ):
             offsets.append(x_y)
     return offsets
-
-
+#render resolution
+RES_X = 1024
+RES_Y = 1024
 def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=None):
     start_time = time.time()
 
@@ -200,7 +201,8 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
         f.write(code)
     
     num_images = 0
-    
+    bpy.data.scenes['Render'].render.resolution_x = RES_X
+    bpy.data.scenes['Render'].render.resolution_y = RES_Y
     # get images from background directory
     if background_dir is not None:
         images_list = []
@@ -218,6 +220,13 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
     # set default background in case base blender file is messed up
     bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["HDRI_Earth_3.exr"]
     
+    #set background image mode depending on nodes in tree either sets environment texture or image node
+    #NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
+    #WARNING: this only looks to see if nodes are in the node tree. does not check if they are connected properly.
+    
+    image_node_in_tree = 'Image' in bpy.data.scenes['Render'].node_tree.nodes.keys()
+    if image_node_in_tree:
+        random_crop = 'Crop' in bpy.data.scenes['Render'].node_tree.nodes.keys()
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
@@ -227,9 +236,31 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
         name = shortuuid.uuid()
         output_node.file_slots[0].path = "image_#" + str(name)
         output_node.file_slots[1].path = "mask_#" + str(name)
+        
+        #set background image, using image node and crop node if in tree, otherwise just set environment texture.
         if num_images > 0:
-            image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + np.random.choice(images_list))
-            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+            background_image = np.random.choice(images_list)
+            image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + background_image)
+            frame.background = str(background_image)
+            if image_node_in_tree:
+                if random_crop: 
+                    if RES_X < image.size[0]:
+                        frame.crop_x = off_x = np.random.randint(0, image.size[0]-RES_X-1)
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].min_x = off_x
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].max_x = off_x + RES_X
+                    else:
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].min_x = 0
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].max_x = image.size[0]
+                    if RES_Y < image.size[1]:
+                        frame.crop_y = off_y = np.random.randint(0, image.size[1]-RES_Y-1)
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].min_y = off_y
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].max_y = off_y + RES_Y
+                    else:
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].min_y = 0
+                        bpy.data.scenes["Render"].node_tree.nodes["Crop"].max_y = image.size[1]
+                bpy.data.scenes['Render'].node_tree.nodes['Image'].image = image
+            else:
+                bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
 
         # set filters to random values
         frame.augmentations = set_filter_nodes(filters, node_tree)
