@@ -126,7 +126,7 @@ def set_filter_nodes(filters, node_tree):
         node_tree.nodes["Glare"].threshold = result_dict['Glare']['threshold'] = glare_threshold
 
     if 'Blur' in filters:
-        #set blur values
+        # set blur values
         blur_x = np.random.uniform(10, 30)
         blur_y = np.random.uniform(10, 30)
         node_tree.nodes["Blur"].size_x = result_dict['Blur']['size_x'] = blur_x
@@ -141,10 +141,19 @@ def get_occluded_offsets(num):
         if not ( 0.1 < x_y[0] < 0.9 and 0.1 < x_y[1] < 0.9 ):
             offsets.append(x_y)
     return offsets
-#render resolution
+
+
+# render resolution
 RES_X = 1024
 RES_Y = 1024
-def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=None):
+
+
+def generate(ds_name,
+             num,
+             filters,
+             occlusion=None,
+             bucket=None,
+             background_dir=None):
     start_time = time.time()
 
     # check if folder exists in render, if not, create folder
@@ -157,7 +166,6 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
     for f in filters:
         tags += ' ' + f  
 
-    
     data_storage_path = os.path.join(os.getcwd(), "render", ds_name)
 
     enable_gpus("CUDA", True)
@@ -213,31 +221,30 @@ def generate(ds_name, num, filters, occlusion=None, bucket=None, background_dir=
         num_images = len(images_list)
         if num_images > 0:
             tags += ' randomized backgrounds'
-    
+
     node_tree = bpy.data.scenes["Render"].node_tree
     reset_filter_nodes(node_tree)
     
     # set default background in case base blender file is messed up
     bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["HDRI_Earth_3.exr"]
     
-    #set background image mode depending on nodes in tree either sets environment texture or image node
-    #NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
-    #WARNING: this only looks to see if nodes are in the node tree. does not check if they are connected properly.
-    
+    # set background image mode depending on nodes in tree either sets environment texture or image node
+    # NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
+    # WARNING: this only looks to see if nodes are in the node tree. does not check if they are connected properly.
     image_node_in_tree = 'Image' in bpy.data.scenes['Render'].node_tree.nodes.keys()
     if image_node_in_tree:
         random_crop = 'Crop' in bpy.data.scenes['Render'].node_tree.nodes.keys()
+
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
-        
 
         # create name for the current image (unique to that image)
         name = shortuuid.uuid()
         output_node.file_slots[0].path = "image_#" + str(name)
         output_node.file_slots[1].path = "mask_#" + str(name)
-        
-        #set background image, using image node and crop node if in tree, otherwise just set environment texture.
+
+        # set background image, using image node and crop node if in tree, otherwise just set environment texture.
         if num_images > 0:
             background_image = np.random.choice(images_list)
             image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + background_image)

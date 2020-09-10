@@ -12,7 +12,8 @@ import shortuuid
 import subprocess
 import tqdm
 """
-    script for generating cygnus training data with glare, blur, and domain randomized backgrounds.
+    script for generating cygnus training data with glare, blur, and domain randomized backgrounds, 
+    and randomized textures.
 """
 sys.stdout = sys.stderr
 
@@ -35,8 +36,9 @@ OG_KEYPOINTS = {
     'barrel_bottom': (0, 0, -3.6295),
     'barrel_top': (0, 0, 3.18566)
 }
-NUM = 10
+NUM = 2000
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
+
 
 def check_nodes(filters, node_tree):
     """
@@ -50,6 +52,7 @@ def check_nodes(filters, node_tree):
             print("{} is not in the node tree".format(f))
     return _filters
 
+
 def reset_filter_nodes(node_tree):
     """
         resets filters nodes to default values that will not modify final image
@@ -62,7 +65,8 @@ def reset_filter_nodes(node_tree):
     if 'Blur' in node_tree.nodes.keys():
         node_tree.nodes['Blur'].size_x = 0
         node_tree.nodes['Blur'].size_y = 0
-    
+
+
 def set_filter_nodes(filters, node_tree):
     """
         set filter node parameters to random value
@@ -90,16 +94,20 @@ def set_filter_nodes(filters, node_tree):
         node_tree.nodes["Glare"].threshold = result_dict['Glare']['threshold'] = glare_threshold
 
     if 'Blur' in filters:
-        #set blur values
+        # set blur values
         blur_x = np.random.uniform(10, 30)
         blur_y = np.random.uniform(10, 30)
         node_tree.nodes["Blur"].size_x = result_dict['Blur']['size_x'] = blur_x
         node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
     return result_dict
-        
 
 
-def generate(ds_name, tags, filters, background_dir=None):
+# render resolution
+RES_X = 1024
+RES_Y = 1024
+
+
+def generate(ds_name, tags, filters, background_dir=None, texture_dir=None):
     start_time = time.time()
 
     # check if folder exists in render, if not, create folder
@@ -160,7 +168,16 @@ def generate(ds_name, tags, filters, background_dir=None):
         f.write(code)
     
     num_images = 0
-    
+    num_textures = 0
+    # get images from textures directory
+    if texture_dir is not None:
+        textures_list = []
+        for f in os.listdir(background_dir):
+            if f.endswith(".exr") or f.endswith(".jpg") or f.endswith(".png"):
+                textures_list.append(f)
+        textures_list = sorted(textures_list)
+        num_textures = len(textures_list)
+
     # get images from background directory
     if background_dir is not None:
         images_list = []
@@ -169,13 +186,12 @@ def generate(ds_name, tags, filters, background_dir=None):
                 images_list.append(f)
         images_list = sorted(images_list)
         num_images = len(images_list)
-    
+
     node_tree = bpy.data.scenes["Render"].node_tree
     filters = check_nodes(filters, node_tree)
     reset_filter_nodes(node_tree)
     material_keys = set(bpy.data.materials.keys())
     used_materials = set(bpy.data.objects["Cygnus_Real"].material_slots.keys()).intersection(material_keys)
-    print(used_materials)
     settable_textures = []  
     for m in used_materials:
         if 'logo' not in m.lower():
@@ -191,31 +207,62 @@ def generate(ds_name, tags, filters, background_dir=None):
                     for link in inputs.links:
                         bpy.data.materials[m].node_tree.links.remove(link)
                         
-                #link position output of geometry node to vector input of image texture node
+                # link position output of geometry node to vector input of image texture node
                 bpy.data.materials[m].node_tree.links.new(new_geometry.outputs[0] , new_texture.inputs['Vector'])
                 
-                #link output of image texture node to color input of glossy bdsf shader node        
+                # link output of image texture node to color input of glossy bdsf shader node
                 bpy.data.materials[m].node_tree.links.new(new_texture.outputs['Color'], new_surface.inputs[0])
                 
-                #link output of glossy bdsf shader node to input of material output node
+                # link output of glossy bdsf shader node to input of material output node
                 bpy.data.materials[m].node_tree.links.new(mat_nodes['Material Output'].inputs[0], new_surface.outputs[0])
                 
                 settable_textures.append(new_texture)
-    
+    # set background image mode depending on nodes in tree either sets environment texture or image node
+    # NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
+    # WARNING: this only looks to see if nodes are in the node tree. does not check if they are connected properly.
+    image_node_in_tree = 'Image' in bpy.data.scenes['Render'].node_tree.nodes.keys()
+    if image_node_in_tree:
+        random_crop = 'Crop' in bpy.data.scenes['Render'].node_tree.nodes.keys()
+        if random_crop:
+            crop_node = bpy.data.scenes["Render"].node_tree.nodes["Crop"]
+
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
-        
 
         # create name for the current image (unique to that image)
         name = shortuuid.uuid()
         output_node.file_slots[0].path = "image_#" + str(name)
         output_node.file_slots[1].path = "mask_#" + str(name)
-        if num_images > 0:
+        if num_textures > 0:
             for texture in settable_textures:
-                image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + np.random.choice(images_list))
+                image = bpy.data.images.load(filepath = os.getcwd()+ '/' + background_dir + '/' + np.random.choice(textures_list))
                 texture.image = image
-            #bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+
+        # set background image, using image node and crop node if in tree, otherwise just set environment texture.
+        if num_images > 0:
+            background_image = np.random.choice(images_list)
+            image = bpy.data.images.load(filepath=os.getcwd() + '/' + background_dir + '/' + background_image)
+            frame.background = str(background_image)
+            if image_node_in_tree:
+                if random_crop:
+                    if RES_X < image.size[0]:
+                        frame.crop_x = off_x = np.random.randint(0, image.size[0] - RES_X - 1)
+                        crop_node.min_x = off_x
+                        crop_node.max_x = off_x + RES_X
+                    else:
+                        crop_node.min_x = 0
+                        crop_node.max_x = image.size[0]
+                    if RES_Y < image.size[1]:
+                        frame.crop_y = off_y = np.random.randint(0, image.size[1] - RES_Y - 1)
+                        crop_node.min_y = off_y
+                        crop_node.max_y = off_y + RES_Y
+                    else:
+                        crop_node.min_y = 0
+                        crop_node.max_y = image.size[1]
+                bpy.data.scenes['Render'].node_tree.nodes['Image'].image = image
+            else:
+                bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
 
         # set filters to random values
         frame.augmentations = set_filter_nodes(filters, node_tree)
@@ -235,6 +282,10 @@ def generate(ds_name, tags, filters, background_dir=None):
 
         frame.sequence_name = ds_name
         frame.tags = tags
+        frame.focal_length = bpy.data.cameras["Camera"].lens
+        frame.sensor_width = bpy.data.cameras["Camera"].sensor_width
+        frame.sensor_height = bpy.data.cameras["Camera"].sensor_height
+        frame.lens_unit = bpy.data.cameras["Camera"].lens_unit
         # dump data to json
         with open(os.path.join(output_node.base_path, "meta_0" + str(name)) + ".json", "w") as f:
             f.write(frame.dumps())
@@ -285,7 +336,8 @@ def main():
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     tags = input("*> Enter tags for the batch seperated with space: ")
     filters = []
-    
+    background_dir = None
+    texture_dir = None
     glare = input("*> Would you like to generate images with glare?[y/n]: ")
     if glare in yes:
         filters.append("Glare")
@@ -295,14 +347,21 @@ def main():
         filters.append("Blur")
 
     tags_list = tags.split()
+
     background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
     if background_sequence in yes:
         background_dir = input("*> Enter Image Directory: ")
         while not os.path.isdir(background_dir):
             background_dir = input("*> Enter Image Directory: ")
-        generate(dataset_name, tags_list, filters, background_dir)
-    else:
-        generate(dataset_name, tags_list, filters)
+
+    texture_sequence = input("*> Would you like to use randomized textures?[y/n]: ")
+    if texture_sequence in yes:
+        texture_dir = input("*> Enter Image Directory: ")
+        while not os.path.isdir(texture_dir):
+            texture_dir = input("*> Enter Image Directory: ")
+
+    generate(dataset_name, tags_list, filters, background_dir, texture_dir)
+
     if runUpload in yes:
         upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")
