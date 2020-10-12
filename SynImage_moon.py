@@ -1,9 +1,10 @@
 import numpy as np
 import bpy
-import ssi
-from ssi.rotations import Spherical
+import starfish
+from starfish.rotations import Spherical
 from mathutils import Euler
-from ssi import utils
+from mathutils import Quaternion
+from starfish import utils
 import json
 import math
 import time
@@ -12,7 +13,7 @@ import sys
 import boto3
 import shortuuid
 import csv
-from PIL import Image
+
 from collections import defaultdict
 import random
 
@@ -54,10 +55,12 @@ def deleteImage(name, ds_name):
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 10000
-SCALE = 17
+NUM = 120
+RES_X = 4096
+RES_Y = 2048
+FORMAT = 'OPEN_EXR'
 MOON_RADIUS = 0.4
-MOON_CENTERX = 4.723
+MOON_CENTERX = 0
 MOON_CENTERY = 0
 def generate(ds_name, tags_list):
     start_time = time.time()
@@ -67,15 +70,26 @@ def generate(ds_name, tags_list):
         os.mkdir("render/" + ds_name)
     except Exception:
         pass
+    prop = bpy.context.preferences.addons['cycles'].preferences
+    prop.get_devices()
+
+    prop.compute_device_type = 'CUDA'
+
+    for device in prop.devices:
+        if device.type == 'CUDA':
+            device.use = True
     
+    bpy.context.scene.cycles.device = 'GPU'
+
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'    
     data_storage_path = os.getcwd() + "/render/" + ds_name     
-    
+    bpy.data.scenes['Scene'].render.resolution_x = RES_X
+    bpy.data.scenes['Scene'].render.resolution_y = RES_Y
     #setting file output stuff
-    output_node = bpy.data.scenes["Render"].node_tree.nodes["File Output"]
+    bpy.data.scenes["Scene"].node_tree.nodes["File Output"].format.file_format = FORMAT
+    output_node = bpy.data.scenes["Scene"].node_tree.nodes["File Output"]
     output_node.base_path = data_storage_path
-    
-    #set black background
-    #bpy.context.scene.world.color = (0,0,0)
     
     #remove all animation
     for scene in bpy.data.scenes:
@@ -84,57 +98,43 @@ def generate(ds_name, tags_list):
         
     image_num = 0
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-        
     poses = utils.random_rotations(NUM)
     lightings = utils.random_rotations(NUM)
-
+    
+    
     for i, (pose, lighting) in enumerate(zip(poses, lightings)):
-        for scene in bpy.data.scenes:
-            scene.unit_settings.scale_length = 1 / SCALE
 
-        nmi = np.random.uniform(low=0.5, high=6)
-        distance = nmi * 1852 * SCALE
-
-        if np.random.random() < 0.5:
-            # mooon background - uniform distribution over disk slightly larger than moon
-            r = MOON_RADIUS * np.sqrt(np.random.random())
-            t = np.random.uniform(low=0, high=2 * np.pi)
-            background = Euler([0, MOON_CENTERX - r * np.cos(t), MOON_CENTERY + r * np.sin(t)])
-        else:
-            # space background
-            background = Euler([0, 0, 0])
-
-        offset = np.random.uniform(low=0.0, high=1.0, size=(2,))
-    
+        nmi = .3 + (6.3*i/NUM)
+        distance = nmi * 30
         bpy.context.scene.frame_set(0)
-        frame = ssi.Frame(
-            background=background,
-            pose=pose,
-            lighting=lighting,
-            distance=distance,
-            offset=offset
+        frame = starfish.Frame(
+			pose =  Quaternion([ 0.697, 0.32, -0.21, 0.59]),
+            #lighting = lighting,
+            distance = distance,
+            offset = (0.5,0.5)
         )
-        frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
-
-        glare_value = np.random.beta(0.75, 3) - 1
-        bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
-    
+        frame.setup(bpy.data.scenes['Scene'], bpy.data.objects["Moon"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
+       # glare_value = np.random.beta(0.75, 3) - 1
+        #bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
+		
         #create name for the current image (unique to that image)
-        name = shortuuid.uuid()
-        output_node.file_slots[0].path = "image_" + str(name) + "#"
-        output_node.file_slots[1].path = "mask_" + str(name) + "#"
+        name = shortuuid.uuid() 
+        output_node.file_slots[0].path = "image_{}".format(distance)
+        #output_node.file_slots[1].path = "mask_" + str(name) + "#"
         
         createCSV(name, ds_name)
         
         image_num = i + 1
         # render
-        bpy.ops.render.render(scene="Render")
+        bpy.ops.render.render(scene="Scene")
         
         #Tag the pictures
         frame.tags = tags_list
         # add metadata to frame
         frame.sequence_name = ds_name
-        frame.glare_value = glare_value
+        #frame.glare_value = glare_value
+        
+        
     
         with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
             f.write(frame.dumps())
@@ -153,7 +153,7 @@ def generate(ds_name, tags_list):
 ############################
 def upload(ds_name, bucket_name):
     print("\n\n______________STARTING UPLOAD_________")
-
+ 
     # Create an S3 client
     s3 = boto3.client('s3')
 

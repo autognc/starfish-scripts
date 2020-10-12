@@ -2,8 +2,9 @@ import numpy as np
 import bpy
 import starfish
 from mathutils import Euler
+import starfish.annotation
+from starfish.annotation import get_bounding_boxes_from_mask, get_centroids_from_mask, normalize_mask_colors
 from starfish import utils
-from starfish import postprocessing
 import json
 import math
 import time
@@ -20,6 +21,8 @@ def nm_to_bu(nmi):
 
 def deg_to_rad(deg):
     return deg * np.pi / 180  # convert from degrees to radians
+def convert_to_float(i):
+    return float(i)
 
 LABEL_MAP = {
     'gateway': (206, 0, 206)
@@ -30,7 +33,10 @@ LABEL_MAP = {
 #The following is the main code for image generation
 ############################################
 SCALE = 17
-def generate(ds_name, tags_list):
+RES_X = 1024
+RES_Y = 576
+GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
+def generate(ds_name, tags_list, background_dir=None):
     start_time = time.time()
 
     #check if folder exists in render, if not, create folder
@@ -41,6 +47,21 @@ def generate(ds_name, tags_list):
     
     data_storage_path = os.getcwd() + "/render/" + ds_name     
     
+    
+    prop = bpy.context.preferences.addons['cycles'].preferences
+    prop.get_devices()
+
+    prop.compute_device_type = 'CUDA'
+
+    for device in prop.devices:
+        if device.type == 'CUDA':
+            device.use = True
+    
+    bpy.context.scene.cycles.device = 'GPU'
+
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'
+
     # switch to correct scene
     bpy.context.window.scene = bpy.data.scenes['Real']
 
@@ -103,11 +124,40 @@ def generate(ds_name, tags_list):
             lighting=Euler(list(map(deg_to_rad, d['lighting'])))
         ))
 
-    counts = [300] * 7
-
+    counts = [300] * 6
+    blur_vals = [(0,0)]
+    glare_vals = [(0,5)]
+    for i in range(1801//5):
+        blur_x_y = np.random.uniform(2, 6, 2)
+        glare_g_t = (np.random.randint(0,4), np.random.beta(2,8)*3)
+        for j in range(0,5):
+            blur_vals.append(blur_x_y)
+            glare_vals.append(glare_g_t)
     for scene in bpy.data.scenes:
         scene.unit_settings.scale_length = 1 / SCALE
-
+        
+        
+    if background_dir is not None:
+        images_list = []
+        img_names = []
+        for f in os.listdir(background_dir):
+            if f.endswith(".exr"):
+                imgnum = f.split("_")[1]
+                imgnum = imgnum.split(".")[0] + "." + imgnum.split(".")[1]
+                images_list.append(f)
+                img_names.append(imgnum)
+        images_list = sorted(images_list)
+        img_names = sorted(img_names, key=convert_to_float)
+        moon_num = 0
+        
+    else:
+        img_names = []
+    moon_count = 0;
+    # first few moons are too big
+    img_names = img_names[12:]
+    print(img_names)
+    num_moons = len(img_names)
+    print(num_moons)
     for i, frame in enumerate(starfish.Sequence.interpolated(waypoints, counts)):
         bpy.context.scene.frame_set(0)
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Gateway"], bpy.data.objects["Camera"], bpy.data.objects["Sun"])
@@ -116,7 +166,25 @@ def generate(ds_name, tags_list):
         name = str(i).zfill(5)
         output_node.file_slots[0].path = "image_" + "#" + str(name)
         output_node.file_slots[1].path = "mask_" + "#" + str(name)
+
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_vals[i][0] 
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_vals[i][1] 
         
+        glare_value = 0.5
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_vals[i][0]]
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_vals[i][1]       
+        
+        
+        # load new Environment Texture
+        if img_names:
+            moon_name = img_names[moon_num]
+            image = bpy.data.images.load(filepath = background_dir + "/image_" + moon_name + ".exr")
+            bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+            moon_count += 1
+            if moon_count > (1800//num_moons+1):
+                moon_num = (moon_num + 1) % num_moons
+                moon_count = 0;    
         # render
         bpy.ops.render.render(scene="Render")
         
@@ -129,11 +197,11 @@ def generate(ds_name, tags_list):
         meta_filepath = os.path.join(output_node.base_path, "meta_0" + str(name) + ".json")
 
         # run color normalization with labels plus black background
-        postprocessing.normalize_mask_colors(mask_filepath, list(LABEL_MAP.values()) + [(0, 0, 0)])
+        normalize_mask_colors(mask_filepath, list(LABEL_MAP.values()) + [(0, 0, 0)])
 
         # get bbox and centroid and add them to metadata
-        frame.bboxes = postprocessing.get_bounding_boxes_from_mask(mask_filepath, LABEL_MAP)
-        frame.centroids = postprocessing.get_centroids_from_mask(mask_filepath, LABEL_MAP)
+        frame.bboxes = get_bounding_boxes_from_mask(mask_filepath, LABEL_MAP)
+        frame.centroids =  get_centroids_from_mask(mask_filepath, LABEL_MAP)
     
         with open(meta_filepath, "w") as f:
             f.write(frame.dumps())
@@ -208,9 +276,20 @@ def main():
     dataset_name = input("*> Enter name for folder: ")
     print("   Note: rendered images will be stored in a directory called 'render' in the same local directory this script is located under the directory name you specify.")
     tags = input("*> Enter tags for the batch seperated with space: ")
+    
+    # prompt user for directory of background images
+    background_sequence = input("*> Would you like to use mutliple background images?[y/n]: ")
+    if background_sequence in yes:
+        background_dir = input("*> Enter Image Directory: ")
+        while not os.path.isdir(background_dir):
+            background_dir = input("*> Enter Image Directory: ")
+
     tags_list = tags.split();
     if runGen in yes:
-        generate(dataset_name, tags_list)
+        if background_sequence in yes:
+            generate(dataset_name, tags_list, background_dir)
+        else:
+            generate(dataset_name, tags_list)
     if runUpload in yes: 
         upload(dataset_name, bucket_name)
     print("______________DONE EXECUTING______________")

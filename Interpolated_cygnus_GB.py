@@ -1,21 +1,21 @@
 import numpy as np
 import bpy
-import ssi
-from ssi.rotations import Spherical
+import starfish
+from starfish.rotations import Spherical
+import starfish.rotations
 from mathutils import Euler
-from ssi import utils
-import json
+from starfish import utils
 import math
+import json
 import time
 import os
 import sys
 import boto3
 import shortuuid
 import csv
-from PIL import Image
 from collections import defaultdict
-import random
 
+GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 def createCSV(name, ds_name):
     header = ['label', 'R', 'G', 'B']
     rows = [
@@ -26,7 +26,7 @@ def createCSV(name, ds_name):
         ['orbitrak_logo', '0', '206', '206'],
         ['cygnus_logo', '206', '0', '206']]
  
-    with open("render/" + ds_name + "/" + "labels_" + str(name) + '0.csv', 'w') as f:
+    with open("render/" + ds_name + "/" + "labels_" + "0" + str(name) + '.csv', 'w') as f:
         csv_writer = csv.writer(f)
         csv_writer.writerow(header)
         csv_writer.writerows(rows)
@@ -54,7 +54,7 @@ def deleteImage(name, ds_name):
 
 def get_xy(name, ds_name):
     # read in truth paths from the dataset for both dev and test sets
-    truth_paths = [os.getcwd() + "/render/" + ds_name + '/truth_' + name + '0.png']
+    truth_paths = [os.getcwd() + "/render/" + ds_name + '/truth_' + '0' + name + '.png']
     truth_images = load_images_from_paths(truth_paths)
     # represented with BGR values. load these in from csv that maps object to color (e.g. left solar panel is always red dot)
     colors = {'barrel_top': [0, 0, 206], 'barrel_bottom': [0, 206, 73], 'panel_left':[206, 0, 206], 'panel_right': [0, 206, 206], 'orbitrak_logo': [206, 177, 0], 'cygnus_logo':[206, 0, 0]}
@@ -85,9 +85,41 @@ def get_xy(name, ds_name):
 ############################################
 #The following is the main code for image generation
 ############################################
-NUM = 7000
 def generate(ds_name, tags_list):
     start_time = time.time()
+    waypoints = [
+        starfish.Frame(pose=Euler((math.radians(-45.0), math.radians(-60.0),  math.radians(-10)), 'XYZ'), distance=50, offset = (0.35, 0.35), background = Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(195), math.radians(180),  math.radians(45.0)), 'XYZ'), distance=45, offset = (0.35, 0.5), background = Euler((math.radians(20), math.radians(0),  math.radians(0)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(270), math.radians(200),  math.radians(90)), 'XYZ'), distance=40, offset = (0.5, 0.5), background = Euler((math.radians(44), math.radians(0),  math.radians(-5)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(360), math.radians(210),  math.radians(180)), 'XYZ'), distance=37, offset = (0.6, 0.6), background = Euler((math.radians(70), math.radians(0),  math.radians(-20)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(365), math.radians(215),  math.radians(200)), 'XYZ'), distance=35, offset = (0.6, 0.7), background = Euler((math.radians(90), math.radians(0),  math.radians(-40)), 'XYZ')),
+    ]
+
+	#waypoints_2 has more logos and solar panels. Same background as waypoints
+    waypoints_2 = [
+        starfish.Frame(pose=Euler((math.radians(-45), math.radians(-35),  math.radians(0)), 'XYZ'), distance=50, offset = (0.35, 0.35), background = Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(-30), math.radians(-40),  math.radians(-10)), 'XYZ'), distance=45, offset = (0.35, 0.5), background = Euler((math.radians(20), math.radians(0),  math.radians(0)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(0), math.radians(-50),  math.radians(20)), 'XYZ'), distance=40, offset = (0.5, 0.5), background = Euler((math.radians(44), math.radians(0),  math.radians(-5)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(30), math.radians(-50),  math.radians(-10)), 'XYZ'), distance=37, offset = (0.55, 0.55), background = Euler((math.radians(70), math.radians(0),  math.radians(-20)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(60), math.radians(-55),  math.radians(-10)), 'XYZ'), distance=35, offset = (0.55, 0.6), background = Euler((math.radians(90), math.radians(0),  math.radians(-40)), 'XYZ')),
+    ]
+
+    waypoints_3 = [
+        starfish.Frame(pose=Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ'), distance=100, offset = (0.35, 0.35), background = Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ')),
+        starfish.Frame(pose=Euler((math.radians(0), math.radians(0),  math.radians(0)), 'XYZ'), distance=100, offset = (0.35, 0.35), background = Euler((math.radians(0), math.radians(0),  math.radians(50)), 'XYZ')),
+    ]
+    
+    counts = [
+        180,180,180,180
+    ]
+    counts_2 = [
+        120,120,120,120
+    ]
+    counts_3 = [
+        2
+    ]
+    
+    seq = starfish.Sequence.interpolated(waypoints_2, counts_2)
 
     #check if folder exists in render, if not, create folder
     try:
@@ -110,46 +142,54 @@ def generate(ds_name, tags_list):
         
     image_num = 0
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
-        
-    poses = utils.random_rotations(NUM)
-    lightings = utils.random_rotations(NUM)
-
-    for i, (pose, lighting) in enumerate(zip(poses, lightings)):
-        distance = np.random.uniform(low=30, high=50)
     
-        bpy.context.scene.frame_set(0)
-        frame = ssi.Frame(
-            background=Euler([0, np.pi, 0]),
-            pose=pose,
-            lighting=lighting,
-            distance=distance
-        )
+    blur_vals = [(0,0)]
+    glare_vals = [(0,5)]
+    for i in range(481//5):
+        blur_x_y = np.random.uniform(2, 6, 2)
+        glare_g_t = (np.random.randint(0,4), np.random.beta(2,8)*3)
+        for j in range(0,5):
+            blur_vals.append(blur_x_y)
+            glare_vals.append(glare_g_t)
+
+    #for scene in bpy.data.scenes:
+        #scene.unit_settings.scale_length = 1 / SCALE
+        
+    for i, frame in enumerate(seq):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
-        frame.setup(bpy.data.scenes['Mask_Truth'], bpy.data.objects["Truth_Data"], bpy.data.objects["Camera_Truth"], bpy.data.objects["Sun"])
+        #frame.setup(bpy.data.objects["Truth_Data"], bpy.data.objects["Camera_Truth"], bpy.data.objects["Sun"])
 	
+        bpy.context.scene.frame_set(0)
         #create name for the current image (unique to that image)
-        name = shortuuid.uuid()
-        output_node.file_slots[0].path = "image_" + str(name) + "#"
-        output_node.file_slots[1].path = "mask_" + str(name) + "#"
-        output_node.file_slots[2].path = "truth_" + str(name) + "#"
+        name = str(image_num).zfill(5)
+        output_node.file_slots[0].path = "image_" + "#" + str(name) 
+        output_node.file_slots[1].path = "mask_" + "#" + str(name)
+        #output_node.file_slots[2].path = "truth_" + "#" + str(name)
         
         createCSV(name, ds_name)
 		
         image_num = i + 1
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_x = blur_vals[i][0] 
+        bpy.data.scenes["Render"].node_tree.nodes["Blur"].size_y = blur_vals[i][1] 
+        
+        glare_value = 0.5
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].glare_type = GLARE_TYPES[glare_vals[i][0]]
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].mix = glare_value
+        bpy.data.scenes["Render"].node_tree.nodes["Glare"].threshold = glare_vals[i][1]  
         # render
         bpy.ops.render.render(scene="Render")
         
         #add centroid truth data to json files
-        frame.truth_centroids, deleted = get_xy(name, ds_name)
+        #frame.truth_centroids, deleted = get_xy(name, ds_name)
         #Tag the pictures
         frame.tags = tags_list
         # add metadata to frame
         frame.sequence_name = ds_name        
-    
+        deleted = True
         # dump data to json
         if not deleted:
-            with open(os.path.join(output_node.base_path, "meta_" + str(name) + "0.json"), "w") as f:
+            with open(os.path.join(output_node.base_path, "meta_" + "0" + str(name) + ".json"), "w") as f:
                 f.write(frame.dumps())
 
     print("===========================================" + "\r")
@@ -196,7 +236,7 @@ def validate_bucket_name(bucket_name):
     s3t = boto3.resource('s3')
     #check if bucket exits. If not return false
     if s3t.Bucket(bucket_name).creation_date is None:
-        print("...Bucket does not exist, enter valid bucket name...")
+        print("...Bucket does not exits, enter valid bucket name...")
         return False
     else:
         #if exists, return true
