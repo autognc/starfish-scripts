@@ -36,6 +36,19 @@ OG_KEYPOINTS = {
     'barrel_top': (0, 0, 3.18566)
 }
 
+def reset_filter_nodes(node_tree):
+    """
+        resets filters nodes to default values that will not modify final image
+    """
+    
+    if 'Glare' in node_tree.nodes.keys():
+        node_tree.nodes['Glare'].mix = -1
+        node_tree.nodes['Glare'].threshold = 8
+    
+    if 'Blur' in node_tree.nodes.keys():
+        node_tree.nodes['Blur'].size_x = 0
+        node_tree.nodes['Blur'].size_y = 0
+
 
 def generate(ds_name):
     start_time = time.time()
@@ -45,6 +58,21 @@ def generate(ds_name):
         os.mkdir(os.path.join("render", ds_name))
     except Exception:
         pass
+        
+    
+    prop = bpy.context.preferences.addons['cycles'].preferences
+    prop.get_devices()
+
+    prop.compute_device_type = 'CUDA'
+
+    for device in prop.devices:
+        if device.type == 'CUDA':
+            device.use = True
+    
+    bpy.context.scene.cycles.device = 'GPU'
+
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'
 
     data_storage_path = os.path.join(os.getcwd(), "render", ds_name)
 
@@ -89,13 +117,16 @@ def generate(ds_name):
 
     with open(os.path.join(data_storage_path, 'gen_code.py'), 'w') as f:
         f.write(code)
+    
+    node_tree = bpy.data.scenes["Render"].node_tree
+    reset_filter_nodes(node_tree)
 
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
         frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
 
         # create name for the current image (unique to that image)
-        name = shortuuid.uuid()
+        name = str(i).zfill(5)
         output_node.file_slots[0].path = "image_#" + str(name)
         output_node.file_slots[1].path = "mask_#" + str(name)
 
