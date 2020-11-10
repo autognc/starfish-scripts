@@ -14,6 +14,36 @@ import shortuuid
 import subprocess
 import tqdm
 
+def enable_gpus(device_type, use_cpus=False):
+    preferences = bpy.context.preferences
+    cycles_preferences = preferences.addons["cycles"].preferences
+    cuda_devices, opencl_devices = cycles_preferences.get_devices()
+
+    if device_type == "CUDA":
+        devices = cuda_devices
+    elif device_type == "OPENCL":
+        devices = opencl_devices
+    else:
+        raise RuntimeError("Unsupported device type")
+
+    activated_gpus = []
+
+    for device in devices:
+        if device.type == "CPU":
+            device.use = use_cpus
+        else:
+            device.use = True
+            activated_gpus.append(device.name)
+
+    cycles_preferences.compute_device_type = device_type
+    for scene in bpy.data.scenes:
+        scene.cycles.device = 'GPU'
+
+    return activated_gpus
+
+
+enable_gpus("CUDA", True)
+
 sys.stdout = sys.stderr
 
 BACKGROUND_COLOR = (0, 0, 0)
@@ -58,21 +88,6 @@ def generate(ds_name):
         os.mkdir(os.path.join("render", ds_name))
     except Exception:
         pass
-        
-    
-    prop = bpy.context.preferences.addons['cycles'].preferences
-    prop.get_devices()
-
-    prop.compute_device_type = 'CUDA'
-
-    for device in prop.devices:
-        if device.type == 'CUDA':
-            device.use = True
-    
-    bpy.context.scene.cycles.device = 'GPU'
-
-    for scene in bpy.data.scenes:
-        scene.cycles.device = 'GPU'
 
     data_storage_path = os.path.join(os.getcwd(), "render", ds_name)
 
@@ -147,7 +162,7 @@ def generate(ds_name):
         frame.sequence_name = ds_name
 
         # dump data to json
-        with open(os.path.join(output_node.base_path, "meta_0" + str(name)), "w") as f:
+        with open(os.path.join(output_node.base_path, "meta_0" + str(name)+ ".json"), "w") as f:
             f.write(frame.dumps())
 
     print("===========================================" + "\r")
