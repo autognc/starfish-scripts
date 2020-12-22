@@ -153,7 +153,8 @@ def generate(ds_name,
              filters,
              occlusion=None,
              bucket=None,
-             background_dir=None):
+             background_dir=None,
+             keypoints_file=None):
     start_time = time.time()
 
     # check if folder exists in render, if not, create folder
@@ -178,12 +179,19 @@ def generate(ds_name,
             obj.animation_data_clear()
     bpy.context.scene.frame_set(0)
 
+    # set color management
+    for scene in bpy.data.scenes:
+        scene.view_settings.view_transform = 'Filmic Log Encoding Base'
+        scene.view_settings.look = 'High Contrast'
+
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
+    
     if occlusion:
         offsets = get_occluded_offsets(num)
         tags += ' occlusion'
     else:
         offsets = np.random.uniform(low=0.15, high=.85, size=(num,2))
+    
     sequence = starfish.Sequence.standard(
         pose=starfish.utils.random_rotations(num),
         lighting=starfish.utils.random_rotations(num),
@@ -192,7 +200,13 @@ def generate(ds_name,
         offset=offsets
     )
 
-    keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
+    if keypoints_file:
+        with open(keypoints_file, 'r') as f:
+            keypoints = json.load(f)["keypoints"]
+        print("reading from keypoints file")
+        print(keypoints)
+    else:
+        keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
 
     with open(os.path.abspath(__file__), 'r') as f:
         code = f.read()
@@ -202,6 +216,7 @@ def generate(ds_name,
         'og_keypoints': OG_KEYPOINTS,
         'label_map': LABEL_MAP_FULL
     }
+
     with open(os.path.join(data_storage_path, 'metadata.json'), 'w') as f:
         json.dump(metadata, f)
 
@@ -226,7 +241,8 @@ def generate(ds_name,
     reset_filter_nodes(node_tree)
     
     # set default background in case base blender file is messed up
-    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["HDRI_Earth_3.exr"]
+    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Earth_Oceaon.hdr"]
+    bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.002
     
     # set background image mode depending on nodes in tree either sets environment texture or image node
     # NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
@@ -268,6 +284,7 @@ def generate(ds_name,
                 bpy.data.scenes['Render'].node_tree.nodes['Image'].image = image
             else:
                 bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+                bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
 
         # set filters to random values
         frame.augmentations = set_filter_nodes(filters, node_tree)
@@ -345,7 +362,7 @@ def main():
     if bucket:
         while not validate_bucket_name(bucket):
             bucket = input("*> Enter Bucket name: ")
-
+    kp_file = config.get("keypoints_file")
     imagesets = config.get("imagesets")
     if imagesets:
         imgset_dict = {imgset: {
@@ -370,7 +387,7 @@ def main():
         
         for imgset in imgset_dict.keys():
             set_conf = imgset_dict[imgset]
-            generate(imgset, set_conf['num'], set_conf['filters'], set_conf['occlusion'], bucket, set_conf['backgrounds'])
+            generate(imgset, set_conf['num'],set_conf['filters'], set_conf['occlusion'], bucket, set_conf['backgrounds'], kp_file)
     print("______________DONE EXECUTING______________")
 
 
