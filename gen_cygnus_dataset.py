@@ -56,7 +56,8 @@ LABEL_MAP_FULL = {
     'orbitrak_logo': (0, 206, 206),
     'cygnus_logo': (206, 0, 206)
 }
-LABEL_MAP_SINGLE = {'cygnus': list(LABEL_MAP_FULL.values())}
+
+LABEL_MAP_SINGLE = {'cygnus': [(206,206,206)]}
 
 OG_KEYPOINTS = {
     'barrel_center': (0.0, 0.0, 0.0),
@@ -153,7 +154,8 @@ def generate(ds_name,
              filters,
              occlusion=None,
              bucket=None,
-             background_dir=None):
+             background_dir=None,
+             keypoints_file=None):
     start_time = time.time()
 
     # check if folder exists in render, if not, create folder
@@ -192,7 +194,13 @@ def generate(ds_name,
         offset=offsets
     )
 
-    keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
+    if keypoints_file:
+        with open(keypoints_file, 'r') as f:
+            keypoints = json.load(f)["keypoints"]
+        print("reading from keypoints file")
+        print(keypoints)
+    else:
+        keypoints = starfish.annotation.generate_keypoints(bpy.data.objects['Cygnus_Real'], 128, seed=4)
 
     with open(os.path.abspath(__file__), 'r') as f:
         code = f.read()
@@ -202,6 +210,7 @@ def generate(ds_name,
         'og_keypoints': OG_KEYPOINTS,
         'label_map': LABEL_MAP_FULL
     }
+
     with open(os.path.join(data_storage_path, 'metadata.json'), 'w') as f:
         json.dump(metadata, f)
 
@@ -226,7 +235,11 @@ def generate(ds_name,
     reset_filter_nodes(node_tree)
     
     # set default background in case base blender file is messed up
-    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["HDRI_Earth_3.exr"]
+    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Earth_Oceaon.hdr"]
+    bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.312
+
+    # set exposure level
+    node_tree.nodes['Group'].inputs[1].default_value =  -8.15
     
     # set background image mode depending on nodes in tree either sets environment texture or image node
     # NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
@@ -237,7 +250,6 @@ def generate(ds_name,
 
     for i, frame in enumerate(tqdm.tqdm(sequence)):
         frame.setup(bpy.data.scenes['Real'], bpy.data.objects["Cygnus_Real"], bpy.data.objects["Camera_Real"], bpy.data.objects["Sun"])
-        frame.setup(bpy.data.scenes['Mask_ID'], bpy.data.objects["Cygnus_MaskID"], bpy.data.objects["Camera_MaskID"], bpy.data.objects["Sun"])
 
         # create name for the current image (unique to that image)
         name = shortuuid.uuid()
@@ -268,6 +280,7 @@ def generate(ds_name,
                 bpy.data.scenes['Render'].node_tree.nodes['Image'].image = image
             else:
                 bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
+                bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
 
         # set filters to random values
         frame.augmentations = set_filter_nodes(filters, node_tree)
@@ -345,7 +358,7 @@ def main():
     if bucket:
         while not validate_bucket_name(bucket):
             bucket = input("*> Enter Bucket name: ")
-
+    kp_file = config.get("keypoints_file")
     imagesets = config.get("imagesets")
     if imagesets:
         imgset_dict = {imgset: {
@@ -370,7 +383,7 @@ def main():
         
         for imgset in imgset_dict.keys():
             set_conf = imgset_dict[imgset]
-            generate(imgset, set_conf['num'], set_conf['filters'], set_conf['occlusion'], bucket, set_conf['backgrounds'])
+            generate(imgset, set_conf['num'],set_conf['filters'], set_conf['occlusion'], bucket, set_conf['backgrounds'], kp_file)
     print("______________DONE EXECUTING______________")
 
 
