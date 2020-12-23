@@ -49,15 +49,8 @@ enable_gpus("CUDA", True)
 sys.stdout = sys.stderr
 
 BACKGROUND_COLOR = (0, 0, 0)
-LABEL_MAP_FULL = {
-    'barrel': (206, 0, 0),
-    'panel_right': (206, 206, 0),
-    'panel_left': (0, 0, 206),
-    'orbitrak_logo': (0, 206, 206),
-    'cygnus_logo': (206, 0, 206)
-}
 
-LABEL_MAP_SINGLE = {'cygnus': [(206,206,206)]}
+LABEL_MAP_SINGLE = {'cygnus': [(255,255,255)]}
 
 OG_KEYPOINTS = {
     'barrel_center': (0.0, 0.0, 0.0),
@@ -134,7 +127,6 @@ def set_filter_nodes(filters, node_tree):
         node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
     return result_dict
 
-gen_cygnus_dataset.py
 def get_occluded_offsets(num):
     offsets =[]
     while len(offsets) < num:
@@ -240,7 +232,7 @@ def generate(ds_name,
     reset_filter_nodes(node_tree)
     
     # set default background in case base blender file is messed up
-    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Earth_Oceaon.hdr"]
+    bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Earth_Ocean.hdr"]
     bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.312
 
     # set exposure level
