@@ -134,7 +134,7 @@ def set_filter_nodes(filters, node_tree):
         node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
     return result_dict
 
-
+gen_cygnus_dataset.py
 def get_occluded_offsets(num):
     offsets =[]
     while len(offsets) < num:
@@ -179,6 +179,11 @@ def generate(ds_name,
         for obj in scene.objects:
             obj.animation_data_clear()
     bpy.context.scene.frame_set(0)
+
+    # set color management
+    for scene in bpy.data.scenes:
+        scene.view_settings.view_transform = 'Filmic'
+        scene.view_settings.look = 'High Contrast'
 
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
     if occlusion:
