@@ -17,6 +17,7 @@ import tqdm
 """
 
 
+#TODO add support for Optix
 def enable_gpus(device_type, use_cpus=False):
     preferences = bpy.context.preferences
     cycles_preferences = preferences.addons["cycles"].preferences
@@ -62,9 +63,16 @@ OG_KEYPOINTS = {
     'barrel_top': (0, 0, 3.18566)
 }
 
+# Defaults and constants
+# render resolution
+RES_X = 1024
+RES_Y = 1024
+# exposure and background strength defaults for new cygnus model and hdri background
+EXPOSURE_DEFAULT = -8.15 
+BACKGROUND_STRENGTH_DEFAULT = 0.312
 GLARE_TYPES = ['FOG_GLOW', 'SIMPLE_STAR', 'STREAKS', 'GHOSTS']
 
-
+##TODO: fix blend files so this function works(change name of exposure node)
 def check_nodes(filters, node_tree):
     """
         check if requested filters are in node tree of given blender file
@@ -91,7 +99,7 @@ def reset_filter_nodes(node_tree):
     if 'Blur' in node_tree.nodes.keys():
         node_tree.nodes['Blur'].size_x = 0
         node_tree.nodes['Blur'].size_y = 0
-
+    
 
 def set_filter_nodes(filters, node_tree):
     """
@@ -107,10 +115,11 @@ def set_filter_nodes(filters, node_tree):
         'Blur':{
             'size_x':0,
             'size_y':0
-        }
+        },
+         
+        'Exposure': -8.15
     }
     if 'Glare' in filters:
-        
         glare_value = 0.5
         glare_type = np.random.randint(0,4)
         glare_threshold = np.random.beta(2,8)
@@ -125,7 +134,13 @@ def set_filter_nodes(filters, node_tree):
         blur_y = np.random.uniform(10, 30)
         node_tree.nodes["Blur"].size_x = result_dict['Blur']['size_x'] = blur_x
         node_tree.nodes["Blur"].size_y = result_dict['Blur']['size_y'] = blur_y
+    
+    if 'Exposure' in filters:
+        exposure = np.random.uniform(-15, 3.5)
+        node_tree.nodes['Group'].inputs[1].default_value =  result_dict['Exposure'] =  exposure
+    
     return result_dict
+
 
 def get_occluded_offsets(num):
     offsets =[]
@@ -134,11 +149,6 @@ def get_occluded_offsets(num):
         if not ( 0.1 < x_y[0] < 0.9 and 0.1 < x_y[1] < 0.9 ):
             offsets.append(x_y)
     return offsets
-
-
-# render resolution
-RES_X = 1024
-RES_Y = 1024
 
 
 def generate(ds_name,
@@ -178,11 +188,13 @@ def generate(ds_name,
         scene.view_settings.look = 'High Contrast'
 
     shortuuid.set_alphabet('12345678abcdefghijklmnopqrstwxyz')
+    
     if occlusion:
         offsets = get_occluded_offsets(num)
         tags += ' occlusion'
     else:
         offsets = np.random.uniform(low=0.15, high=.85, size=(num,2))
+    
     sequence = starfish.Sequence.standard(
         pose=starfish.utils.random_rotations(num),
         lighting=starfish.utils.random_rotations(num),
@@ -205,7 +217,7 @@ def generate(ds_name,
     metadata = {
         'keypoints': keypoints,
         'og_keypoints': OG_KEYPOINTS,
-        'label_map': LABEL_MAP_FULL
+        'label_map': LABEL_MAP_SINGLE
     }
 
     with open(os.path.join(data_storage_path, 'metadata.json'), 'w') as f:
@@ -233,10 +245,10 @@ def generate(ds_name,
     
     # set default background in case base blender file is messed up
     bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = bpy.data.images["Earth_Ocean.hdr"]
-    bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.312
+    bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = BACKGROUND_STRENGTH_DEFAULT 
 
     # set exposure level
-    node_tree.nodes['Group'].inputs[1].default_value =  -8.15
+    node_tree.nodes['Group'].inputs[1].default_value =  EXPOSURE_DEFAULT
     
     # set background image mode depending on nodes in tree either sets environment texture or image node
     # NOTE: if using image node it is recommended that you add a crop node to perform random crop on images.
@@ -277,8 +289,8 @@ def generate(ds_name,
                 bpy.data.scenes['Render'].node_tree.nodes['Image'].image = image
             else:
                 bpy.data.worlds["World"].node_tree.nodes['Environment Texture'].image = image
-                bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
-
+                bpy.data.worlds['World'].node_tree.nodes['Background'].inputs['Strength'].default_value = 100
+                
         # set filters to random values
         frame.augmentations = set_filter_nodes(filters, node_tree)
         
@@ -376,8 +388,8 @@ def main():
                     print(f'Randomized background dir for {imgset} does not exist')
                     sys.exit()
             if len(set_conf['filters']) > 0:
-                imgset_dict[imgset]['filters'] = check_nodes([f.title() for f in set_conf['filters']], node_tree)
-        
+               # imgset_dict[imgset]['filters'] = check_nodes([f.title() for f in set_conf['filters']], node_tree)
+               imgset_dict[imgset]['filters']  = [f.title() for f in set_conf['filters']]
         for imgset in imgset_dict.keys():
             set_conf = imgset_dict[imgset]
             generate(imgset, set_conf['num'],set_conf['filters'], set_conf['occlusion'], bucket, set_conf['backgrounds'], kp_file)
