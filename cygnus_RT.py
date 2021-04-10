@@ -243,7 +243,7 @@ def generate(ds_name, tags, filters, background_dir=None, texture_dir=None):
         if num_images > 0:
             background_image = np.random.choice(images_list)
             image = bpy.data.images.load(filepath=os.getcwd() + '/' + background_dir + '/' + background_image)
-            frame.background = str(background_image)
+            frame.background_image = str(background_image)
             if image_node_in_tree:
                 if random_crop:
                     if RES_X < image.size[0]:
